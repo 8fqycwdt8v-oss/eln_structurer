@@ -5,6 +5,7 @@ from __future__ import annotations
 from eln_structurer.rules.ordering import (
     InertAtmosphereForSensitiveReagents,
     QuenchAfterReaction,
+    RefluxTemperatureMatchesSolvent,
     SolventPresentBeforeHeating,
     StirringBeforeHeating,
     WorkupKeywordsDeclared,
@@ -214,6 +215,67 @@ def test_inert_atmosphere_fires_for_buli_named_reagent() -> None:
     )
     violations = InertAtmosphereForSensitiveReagents().check(draft)
     assert "ORD-006" in _ids(violations)
+
+
+def _reflux_draft(*, solvent_name: str, setpoint: float | None) -> ReactionDraft:
+    return ReactionDraft(
+        identifiers=[],
+        inputs=[
+            ReactionInputModel(
+                name="r",
+                components=[
+                    CompoundModel(
+                        identifiers=[CompoundIdentifierModel(type="NAME", value="X")],
+                        amount=AmountModel(value=1, units="mmol"),
+                        reaction_role="REACTANT",
+                        is_limiting=True,
+                    )
+                ],
+            ),
+            ReactionInputModel(
+                name="solvent",
+                components=[
+                    CompoundModel(
+                        identifiers=[CompoundIdentifierModel(type="NAME", value=solvent_name)],
+                        amount=AmountModel(value=10, units="mL"),
+                        reaction_role="SOLVENT",
+                    )
+                ],
+            ),
+        ],
+        conditions=ConditionsModel(
+            temperature=TemperatureModel(
+                setpoint_celsius=setpoint, control_type="REFLUX"
+            )
+        ),
+        notes="n",
+        source_paragraph="p",
+    )
+
+
+def test_reflux_matches_solvent_bp_passes_for_thf() -> None:
+    # THF bp = 66°C; setpoint 66 should pass.
+    draft = _reflux_draft(solvent_name="THF", setpoint=66.0)
+    assert RefluxTemperatureMatchesSolvent().check(draft) == []
+
+
+def test_reflux_matches_solvent_bp_warns_on_mismatch() -> None:
+    # THF bp = 66°C; claiming 100°C should warn.
+    draft = _reflux_draft(solvent_name="THF", setpoint=100.0)
+    violations = RefluxTemperatureMatchesSolvent().check(draft)
+    assert "ORD-007" in _ids(violations)
+
+
+def test_reflux_silent_when_setpoint_missing() -> None:
+    """REFLUX with no setpoint is fine — the temperature is implied by the solvent."""
+    draft = _reflux_draft(solvent_name="THF", setpoint=None)
+    assert RefluxTemperatureMatchesSolvent().check(draft) == []
+
+
+def test_reflux_silent_for_unknown_solvent() -> None:
+    """Unknown solvent → rule can't make a claim → silent."""
+    draft = _reflux_draft(solvent_name="some_exotic_solvent_xyz", setpoint=200.0)
+    assert RefluxTemperatureMatchesSolvent().check(draft) == []
 
 
 def test_quench_order_must_be_positive() -> None:

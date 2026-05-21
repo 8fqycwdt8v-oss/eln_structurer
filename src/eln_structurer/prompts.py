@@ -102,11 +102,15 @@ def build_system_prompt() -> str:
     )
 
 
-# A single minimal worked example. Kept tight so the system prompt stays
-# within prompt-cache-friendly bounds. Demonstrates the canonical shape
-# for inputs, conditions, the four-step workup pattern, and outcomes.
+# Three diverse worked examples covering: a reduction (NaBH4 reduction of
+# benzaldehyde — basic ADDITION/EXTRACTION/DRY/CONCENTRATION workup),
+# a Pd-catalysed Suzuki coupling (catalyst + co-solvent + inert atmosphere
+# + chromatography), and a Grignard formation (in-situ organolithium-class
+# reagent under argon, quench with sat. NH4Cl). Examples are deliberately
+# short — together about ~700 tokens — so the system prompt stays inside
+# typical prompt-cache windows.
 FEW_SHOT_EXAMPLE = """\
-Example input paragraph:
+Example 1 — reduction:
     To a stirred solution of benzaldehyde (1.06 g, 10.0 mmol, 1.0 equiv) in
     methanol (10 mL) was added NaBH4 (0.45 g, 12.0 mmol, 1.2 equiv) at 0 °C.
     The mixture was warmed to rt and stirred for 1 h, then quenched with
@@ -153,6 +157,35 @@ Example draft (key fields shown):
                          {"type": "AMOUNT", "value": 0.97, "units": "g"}]}]}],
       "notes": "NaBH4 reduction; standard workup."
     }
+
+Example 2 — Pd-catalysed coupling (truncated to the salient differences):
+    "A flask was charged with 4-bromoanisole (1.0 equiv) and phenylboronic
+    acid (1.5 equiv), Pd(PPh3)4 (5 mol%), and K2CO3 (3.0 equiv) in
+    dioxane/water (4:1) under nitrogen; heated to 90 °C, 16 h; standard
+    workup with EtOAc; flash chromatography (silica) gives 4-methoxybiphenyl
+    (89%)."
+Salient draft fields:
+    - inputs: arylhalide is REACTANT+is_limiting; boronic acid is REACTANT
+      (NOT REAGENT — it donates a C-C bond); Pd(PPh3)4 is CATALYST; K2CO3 is
+      REAGENT; dioxane and water are both SOLVENT.
+    - conditions: temperature.control_type=OIL_BATH, setpoint_celsius=90,
+      stirring.type=MAGNETIC, atmosphere='nitrogen', duration_minutes=960.
+    - workups end with type=FLASH_CHROMATOGRAPHY.
+    - product yield 89%.
+
+Example 3 — Grignard formation (illustrates inert-atmosphere requirement):
+    "Mg turnings (2.0 equiv) and anhydrous THF were charged under argon;
+    bromobenzene (2.0 equiv) in THF was added dropwise at reflux for 30 min;
+    after 1 h at reflux, the solution was cooled to 0 °C, benzaldehyde
+    (1.0 equiv) added dropwise; warmed to rt, 2 h; quenched with sat. NH4Cl
+    at 0 °C; extracted, dried, concentrated, purified to give diphenyl-
+    methanol (90%)."
+Salient draft fields:
+    - inputs: bromobenzene + magnesium + benzaldehyde all REACTANT; THF is
+      SOLVENT; benzaldehyde carries is_limiting=True.
+    - conditions: control_type=REFLUX (setpoint may be omitted — REFLUX
+      implies bp), stirring.type=MAGNETIC, atmosphere='argon'.
+    - first workup: ADDITION with NH4Cl listed in components, order=1.
 """
 
 

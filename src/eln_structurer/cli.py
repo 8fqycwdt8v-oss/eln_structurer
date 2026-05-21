@@ -10,10 +10,40 @@ import click
 from rich.console import Console
 from rich.panel import Panel
 
-from eln_structurer.agent import DEFAULT_MODEL, extract
+from eln_structurer.agent import DEFAULT_MODEL, HIGH_QUALITY_MODEL, extract
 
 
 console = Console()
+
+
+def _format_failure_summary(summary: dict) -> str:
+    """Render a structured failure summary as Rich-friendly markdown."""
+    lines = [
+        f"Iterations: {summary.get('iterations', 0)}",
+    ]
+    history = summary.get("rule_history") or {}
+    if history:
+        lines.append("Repeat-violation counts:")
+        for rule_id, count in sorted(history.items(), key=lambda kv: -kv[1]):
+            lines.append(f"  {rule_id:8s} fired {count}x")
+    last = summary.get("last_validation_summary") or {}
+    errors = (last.get("errors") or [])[:5]
+    if errors:
+        lines.append("Last validation errors:")
+        for e in errors:
+            lines.append(f"  [{e.get('rule_id')}] {e.get('message')}")
+            if e.get("fix_hint"):
+                lines.append(f"      → {e['fix_hint']}")
+    ord_errors = (last.get("ord_validation_errors") or [])[:5]
+    if ord_errors:
+        lines.append("ord-schema errors:")
+        for e in ord_errors:
+            lines.append(f"  - {e}")
+    explanation = summary.get("explanation")
+    if explanation:
+        lines.append("")
+        lines.append(explanation)
+    return "\n".join(lines)
 
 
 def _read_input(source: str) -> str:
@@ -41,8 +71,15 @@ def main() -> None:
     help="Write to this file instead of stdout.",
 )
 @click.option(
-    "--model", default=DEFAULT_MODEL, show_default=True,
-    help="Claude model identifier.",
+    "--model", default=None,
+    help=(
+        f"Claude model identifier. Default: {DEFAULT_MODEL}. Use --quality "
+        f"as a shortcut for {HIGH_QUALITY_MODEL}."
+    ),
+)
+@click.option(
+    "--quality", is_flag=True,
+    help=f"Shortcut: --model={HIGH_QUALITY_MODEL} for maximum extraction quality.",
 )
 @click.option(
     "--max-iters", type=int, default=5, show_default=True,
@@ -50,15 +87,27 @@ def main() -> None:
 )
 @click.option("--debug", is_flag=True, help="Print agent transcript to stderr.")
 def extract_cmd(
-    source: str, fmt: str, out_path: str | None, model: str, max_iters: int, debug: bool
+    source: str,
+    fmt: str,
+    out_path: str | None,
+    model: str | None,
+    quality: bool,
+    max_iters: int,
+    debug: bool,
 ) -> None:
     """Extract a single reaction paragraph from FILE (or '-' for stdin)."""
     paragraph = _read_input(source).strip()
     if not paragraph:
         raise click.ClickException("Input paragraph is empty.")
 
+    if quality and model is not None and model != HIGH_QUALITY_MODEL:
+        raise click.ClickException(
+            f"--quality conflicts with --model={model}. Pick one."
+        )
+    chosen_model = HIGH_QUALITY_MODEL if quality else (model or DEFAULT_MODEL)
+
     result = asyncio.run(
-        extract(paragraph, model=model, max_iters=max_iters, debug=debug)
+        extract(paragraph, model=chosen_model, max_iters=max_iters, debug=debug)
     )
 
     if debug and result.transcript:
@@ -70,7 +119,16 @@ def extract_cmd(
             "[red]Extraction did not converge to a clean ORD reaction.[/red]",
             highlight=False,
         )
-        if result.validation_summary:
+        if result.failure_summary:
+            console.print(
+                Panel(
+                    _format_failure_summary(result.failure_summary),
+                    title="failure summary",
+                    border_style="red",
+                ),
+                highlight=False,
+            )
+        elif result.validation_summary:
             console.print(result.validation_summary)
         sys.exit(2)
 

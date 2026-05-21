@@ -6,6 +6,7 @@ import re
 
 from eln_structurer.rules.base import Rule, RuleViolation, Severity
 from eln_structurer.schema import ReactionDraft
+from eln_structurer.solvents import lookup_solvent_bp
 
 
 _QUENCH_PATTERNS = [
@@ -365,6 +366,72 @@ class WorkupOrderMonotonic(Rule):
         return violations
 
 
+class RefluxTemperatureMatchesSolvent(Rule):
+    """ORD-007: when ``control_type == REFLUX``, the declared setpoint should
+    match the SOLVENT's atmospheric boiling point within tolerance.
+
+    Catches three common LLM mistakes at once:
+    - Setting an arbitrary setpoint with REFLUX (e.g., 100 °C in THF).
+    - Mismatched solvent vs. temperature (THF reflux at 80 °C).
+    - Forgetting that REFLUX is solvent-dependent — the prompt should pull
+      bp from the solvent identity.
+    """
+
+    id = "ORD-007"
+    description = (
+        "If conditions.temperature.control_type=REFLUX, the setpoint should "
+        "match the declared SOLVENT's atmospheric boiling point within ±5 °C."
+    )
+
+    TOLERANCE_C = 5.0
+
+    def check(self, draft: ReactionDraft) -> list[RuleViolation]:
+        temp = draft.conditions.temperature
+        if temp is None or temp.control_type != "REFLUX":
+            return []
+        if temp.setpoint_celsius is None:
+            return []  # silent: setpoint may be inferred downstream
+
+        solvent_bps: list[tuple[str, float]] = []
+        for inp in draft.inputs:
+            for comp in inp.components:
+                if comp.reaction_role != "SOLVENT":
+                    continue
+                for ident in comp.identifiers:
+                    if ident.type not in {"NAME", "IUPAC_NAME"}:
+                        continue
+                    bp = lookup_solvent_bp(ident.value)
+                    if bp is not None:
+                        solvent_bps.append((ident.value, bp))
+
+        if not solvent_bps:
+            return []  # No recognized solvent name; can't make a claim.
+
+        setpoint = temp.setpoint_celsius
+        within_any = any(abs(setpoint - bp) <= self.TOLERANCE_C for _, bp in solvent_bps)
+        if within_any:
+            return []
+
+        listing = ", ".join(f"{n} ({bp} °C)" for n, bp in solvent_bps)
+        return [
+            RuleViolation(
+                rule_id=self.id,
+                severity=Severity.WARNING,
+                message=(
+                    f"Reflux setpoint {setpoint} °C does not match any declared "
+                    f"solvent's boiling point [{listing}]."
+                ),
+                fix_hint=(
+                    "Either set the setpoint to the solvent's bp, omit "
+                    "setpoint_celsius (REFLUX implies bp), or change "
+                    "control_type to HEATER/OIL_BATH if the temperature is "
+                    "intentionally below bp."
+                ),
+                path="conditions.temperature.setpoint_celsius",
+            )
+        ]
+
+
 ORD_RULES: list[Rule] = [
     WorkupKeywordsDeclared(),
     SolventPresentBeforeHeating(),
@@ -372,4 +439,5 @@ ORD_RULES: list[Rule] = [
     QuenchAfterReaction(),
     WorkupOrderMonotonic(),
     InertAtmosphereForSensitiveReagents(),
+    RefluxTemperatureMatchesSolvent(),
 ]

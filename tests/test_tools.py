@@ -16,7 +16,11 @@ from eln_structurer.schema import (
     ReactionDraft,
 )
 from eln_structurer.tools import (
+    compute_mw,
+    compute_mw_from_smiles,
+    expand_abbreviation,
     finalize_reaction,
+    lookup_abbreviation,
     validate_reaction,
     validate_smiles,
 )
@@ -87,6 +91,61 @@ async def test_finalize_reaction_refuses_with_unclean_draft(
     assert result.get("isError") is True
     assert "REFUSED" in result["content"][0]["text"]
     assert slot.pbtxt == ""
+
+
+async def test_compute_mw_valid_smiles() -> None:
+    result = await compute_mw.handler({"smiles": "c1ccccc1"})
+    assert result.get("isError") is not True
+    text = result["content"][0]["text"]
+    # Benzene MW ≈ 78.11
+    assert "78" in text
+    assert "Heavy atoms: 6" in text
+
+
+async def test_compute_mw_invalid_smiles() -> None:
+    result = await compute_mw.handler({"smiles": "totally-invalid["})
+    assert result.get("isError") is True
+    assert "ERROR" in result["content"][0]["text"]
+
+
+def test_compute_mw_from_smiles_pure() -> None:
+    """The pure-core helper returns a typed result without SDK marshaling."""
+    ok = compute_mw_from_smiles("CCO")  # ethanol, MW≈46
+    assert ok.ok
+    assert ok.heavy_atom_count == 3
+    assert 45 < ok.mw_g_per_mol < 47
+
+    bad = compute_mw_from_smiles("not[a]smiles")
+    assert not bad.ok
+    assert bad.error is not None
+
+
+async def test_expand_abbreviation_known_token() -> None:
+    result = await expand_abbreviation.handler({"token": "thf"})
+    assert result.get("isError") is not True
+    text = result["content"][0]["text"]
+    assert "tetrahydrofuran" in text.lower()
+    assert "66" in text  # bp
+
+
+async def test_expand_abbreviation_solvent_only() -> None:
+    """A solvent name not in the abbreviation dict but in the bp table
+    still returns the bp."""
+    result = await expand_abbreviation.handler({"token": "toluene"})
+    assert result.get("isError") is not True
+    assert "111" in result["content"][0]["text"]
+
+
+async def test_expand_abbreviation_unknown_token() -> None:
+    result = await expand_abbreviation.handler({"token": "absolutely_not_a_real_abbrev"})
+    assert "UNKNOWN" in result["content"][0]["text"]
+
+
+def test_lookup_abbreviation_pure() -> None:
+    r = lookup_abbreviation("rt")
+    assert r.expansion is not None
+    assert "room temperature" in r.expansion.lower()
+    assert r.bp_celsius is None
 
 
 def test_smiles_of_returns_first_smiles() -> None:
