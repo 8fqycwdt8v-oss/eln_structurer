@@ -206,9 +206,275 @@ class EsterificationNeedsBothPartners(Rule):
         ]
 
 
+class AmideCouplingHasAmineAndAcid(Rule):
+    """CLS-005: amide coupling needs an amine REACTANT and a carboxylic
+    acid (or activated acid) REACTANT.
+
+    The classifier already detected a coupling reagent (EDC / HATU / etc.).
+    What it cannot verify by name is that the two coupling partners are
+    actually flagged as REACTANTs and not stuck in the wrong role.
+    """
+
+    id = "CLS-005"
+    description = "Amide coupling requires an amine and a carboxylic acid (or activated acid) as REACTANTs."
+
+    _AMINE_PATTERN = re.compile(
+        r"\bamine\b|\baniline\b|piperazine|piperidine|morpholine|"
+        r"\bnh2\b|\bnh\b|amino[- ]"
+    )
+    _ACID_OR_ACTIVATED = re.compile(
+        r"\b\w+ic\s+acid\b|\b\w+yl\s+chloride\b|carboxylic|"
+        r"\bcarbonyl chloride\b|acyl chloride|acid chloride"
+    )
+
+    def check(self, draft: ReactionDraft) -> list[RuleViolation]:
+        if classify_reaction(draft).cls != ReactionClass.AMIDE_FORMATION:
+            return []
+        has_amine = False
+        has_acid = False
+        for inp in draft.inputs:
+            for comp in inp.components:
+                if comp.reaction_role != "REACTANT":
+                    continue
+                n = name_of(comp)
+                if not n:
+                    continue
+                low = n.lower()
+                if self._AMINE_PATTERN.search(low):
+                    has_amine = True
+                if self._ACID_OR_ACTIVATED.search(low):
+                    has_acid = True
+        if has_amine and has_acid:
+            return []
+        return [
+            RuleViolation(
+                rule_id=self.id,
+                severity=Severity.WARNING,
+                message=(
+                    "Amide coupling detected (peptide coupling reagent present) "
+                    "but the amine and/or carboxylic acid partner is not flagged "
+                    "as REACTANT."
+                ),
+                fix_hint=(
+                    "Mark both the amine and the carboxylic acid (or acyl "
+                    "chloride) with reaction_role='REACTANT'. The coupling "
+                    "reagent (EDC, HATU, DCC, …) is a REAGENT, not a REACTANT."
+                ),
+                path="inputs[*].components[*].reaction_role",
+            )
+        ]
+
+
+class BocDeprotectionNeedsAcid(Rule):
+    """CLS-006: Boc deprotection must list an acid (TFA, HCl/dioxane) as
+    a REAGENT.
+    """
+
+    id = "CLS-006"
+    description = "Boc deprotection requires TFA or HCl as a REAGENT."
+
+    _DEPROT_ACID = re.compile(
+        r"\b(tfa|trifluoroacetic acid|hcl|hydrochloric acid|"
+        r"\d+\s*m\s+hcl)\b"
+    )
+
+    def check(self, draft: ReactionDraft) -> list[RuleViolation]:
+        if classify_reaction(draft).cls != ReactionClass.BOC_DEPROTECTION:
+            return []
+        for inp in draft.inputs:
+            for comp in inp.components:
+                if comp.reaction_role not in {"REAGENT", "SOLVENT"}:
+                    continue
+                n = name_of(comp)
+                if n and self._DEPROT_ACID.search(n.lower()):
+                    return []
+        return [
+            RuleViolation(
+                rule_id=self.id,
+                severity=Severity.ERROR,
+                message=(
+                    "Boc/Cbz/Fmoc deprotection detected but no acid (TFA, "
+                    "HCl/dioxane, HCl/EtOAc) is declared as a REAGENT or SOLVENT."
+                ),
+                fix_hint=(
+                    "Add the deprotection acid as a REAGENT (TFA, HCl in "
+                    "dioxane, or HCl/EtOAc). Hydrogenolysis of Cbz needs "
+                    "H2/Pd-C instead."
+                ),
+                path="inputs[*].components[*]",
+            )
+        ]
+
+
+class ReductiveAminationHasCarbonylAndAmine(Rule):
+    """CLS-007: reductive amination needs an amine + a carbonyl (aldehyde
+    or ketone) + a hydride source."""
+
+    id = "CLS-007"
+    description = "Reductive amination requires an amine REACTANT, a carbonyl REACTANT, and a hydride reductant."
+
+    _CARBONYL_PATTERN = re.compile(
+        r"\b\w+aldehyde\b|\b\w+anal\b|\b\w+anone\b|"
+        r"acetone|ketone|aldehyde"
+    )
+    _AMINE_PATTERN = re.compile(
+        r"\bamine\b|\baniline\b|piperazine|piperidine|morpholine|amino[- ]"
+    )
+
+    def check(self, draft: ReactionDraft) -> list[RuleViolation]:
+        if classify_reaction(draft).cls != ReactionClass.REDUCTIVE_AMINATION:
+            return []
+        has_carbonyl = False
+        has_amine = False
+        for inp in draft.inputs:
+            for comp in inp.components:
+                if comp.reaction_role not in {"REACTANT", "REAGENT"}:
+                    continue
+                n = name_of(comp)
+                if not n:
+                    continue
+                low = n.lower()
+                if self._CARBONYL_PATTERN.search(low):
+                    has_carbonyl = True
+                if self._AMINE_PATTERN.search(low):
+                    has_amine = True
+        if has_carbonyl and has_amine:
+            return []
+        missing = []
+        if not has_carbonyl:
+            missing.append("carbonyl (aldehyde/ketone)")
+        if not has_amine:
+            missing.append("amine")
+        return [
+            RuleViolation(
+                rule_id=self.id,
+                severity=Severity.WARNING,
+                message=(
+                    "Reductive-amination–specific reductant present but "
+                    f"missing: {', '.join(missing)}."
+                ),
+                fix_hint=(
+                    "Reductive amination joins an amine with a carbonyl via "
+                    "hydride reduction of the in-situ iminium. Make sure both "
+                    "partners are in the inputs with REACTANT or REAGENT role."
+                ),
+                path="inputs[*].components[*]",
+            )
+        ]
+
+
+class BuchwaldHartwigComponents(Rule):
+    """CLS-008: Buchwald–Hartwig needs Pd + ligand + base + amine + aryl halide."""
+
+    id = "CLS-008"
+    description = "Buchwald–Hartwig amination requires Pd, a phosphine ligand, a base, an amine, and an aryl halide."
+
+    _BASE_PATTERN = re.compile(
+        r"\b(k2co3|cs2co3|k3po4|naotbu|kotbu|naotms|naoh|"
+        r"sodium tert-butoxide|potassium tert-butoxide|lihmds|nahmds)\b"
+    )
+    _AMINE_PATTERN = re.compile(
+        r"\bamine\b|piperazine|piperidine|morpholine|amino[- ]|aniline"
+    )
+
+    def check(self, draft: ReactionDraft) -> list[RuleViolation]:
+        if classify_reaction(draft).cls != ReactionClass.BUCHWALD_HARTWIG:
+            return []
+        has_base = False
+        has_amine = False
+        for inp in draft.inputs:
+            for comp in inp.components:
+                n = name_of(comp)
+                if not n:
+                    continue
+                low = n.lower()
+                if self._BASE_PATTERN.search(low):
+                    has_base = True
+                if comp.reaction_role == "REACTANT" and self._AMINE_PATTERN.search(low):
+                    has_amine = True
+        missing = []
+        if not has_base:
+            missing.append("base (e.g. K2CO3, Cs2CO3, NaOtBu)")
+        if not has_amine:
+            missing.append("amine REACTANT")
+        if not missing:
+            return []
+        return [
+            RuleViolation(
+                rule_id=self.id,
+                severity=Severity.ERROR,
+                message=(
+                    "Buchwald–Hartwig detected (Pd + phosphine ligand) but "
+                    f"missing: {', '.join(missing)}."
+                ),
+                fix_hint=(
+                    "Add the missing component as an input with the right "
+                    "reaction_role. The base activates the amine; the amine "
+                    "is the REACTANT."
+                ),
+                path="inputs[*].components[*]",
+            )
+        ]
+
+
+class MitsunobuComponents(Rule):
+    """CLS-009: Mitsunobu requires DIAD + PPh3 + a nucleophile and an alcohol."""
+
+    id = "CLS-009"
+    description = "Mitsunobu requires both DIAD/DEAD and PPh3."
+
+    _DIAD = re.compile(
+        r"\b(diad|dead|diethyl azodicarboxylate|diisopropyl azodicarboxylate)\b"
+    )
+    _PPH3 = re.compile(r"\b(pph3|triphenylphosphine|ph3p)\b")
+
+    def check(self, draft: ReactionDraft) -> list[RuleViolation]:
+        if classify_reaction(draft).cls != ReactionClass.MITSUNOBU:
+            return []
+        has_diad = False
+        has_pph3 = False
+        for inp in draft.inputs:
+            for comp in inp.components:
+                n = name_of(comp)
+                if not n:
+                    continue
+                low = n.lower()
+                if self._DIAD.search(low):
+                    has_diad = True
+                if self._PPH3.search(low):
+                    has_pph3 = True
+        if has_diad and has_pph3:
+            return []
+        missing = []
+        if not has_diad:
+            missing.append("DIAD or DEAD")
+        if not has_pph3:
+            missing.append("PPh3 (triphenylphosphine)")
+        return [
+            RuleViolation(
+                rule_id=self.id,
+                severity=Severity.ERROR,
+                message=(
+                    f"Mitsunobu detected but missing: {', '.join(missing)}. "
+                    "Both DIAD/DEAD and PPh3 are required."
+                ),
+                fix_hint=(
+                    "Add the missing reagent as an input with reaction_role"
+                    "='REAGENT'."
+                ),
+                path="inputs[*].components[*]",
+            )
+        ]
+
+
 CLS_RULES: list[Rule] = [
     SuzukiRequiredComponents(),
     GrignardRequiresInertAtmosphere(),
     ReductionNeedsReducingAgent(),
     EsterificationNeedsBothPartners(),
+    AmideCouplingHasAmineAndAcid(),
+    BocDeprotectionNeedsAcid(),
+    ReductiveAminationHasCarbonylAndAmine(),
+    BuchwaldHartwigComponents(),
+    MitsunobuComponents(),
 ]
