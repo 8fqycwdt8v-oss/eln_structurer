@@ -467,6 +467,222 @@ class MitsunobuComponents(Rule):
         ]
 
 
+class WittigNeedsCarbonyl(Rule):
+    """CLS-010: Wittig (or HWE / Julia) reactions need a carbonyl REACTANT.
+
+    Severity is WARNING: intramolecular variants and stabilized-ylide edge
+    cases exist, and we'd rather miss a real Wittig than wrongly block a
+    finalize.
+    """
+
+    id = "CLS-010"
+    description = "Wittig / HWE / Julia reactions need an aldehyde or ketone REACTANT."
+
+    _CARBONYL_PATTERN = re.compile(
+        r"\b\w*aldehyde\b|\b\w+anone\b|\b\w+anal\b|"
+        r"\bacetone\b|\bketone\b|\baldehyde\b"
+    )
+
+    def check(self, draft: ReactionDraft) -> list[RuleViolation]:
+        if classify_reaction(draft).cls != ReactionClass.WITTIG:
+            return []
+        for inp in draft.inputs:
+            for comp in inp.components:
+                if comp.reaction_role != "REACTANT":
+                    continue
+                n = name_of(comp)
+                if n and self._CARBONYL_PATTERN.search(n.lower()):
+                    return []
+        return [
+            RuleViolation(
+                rule_id=self.id,
+                severity=Severity.WARNING,
+                message=(
+                    "Wittig / HWE detected (phosphonium ylide or "
+                    "phosphonate present) but no carbonyl REACTANT found."
+                ),
+                fix_hint=(
+                    "Identify the aldehyde or ketone partner from the "
+                    "paragraph and flag it as REACTANT. Intramolecular "
+                    "Wittigs are possible — if the substrate carries the "
+                    "carbonyl internally, the warning is safe to ignore."
+                ),
+                path="inputs[*].components[*].reaction_role",
+            )
+        ]
+
+
+class HalogenatingAgentIsNotLimiting(Rule):
+    """CLS-011: in a halogenation, the substrate (not NBS/Selectfluor/etc.)
+    should be the limiting reagent.
+
+    Mismatched is_limiting on the halogenating agent is a common LLM bug:
+    the model picks the smallest-mole compound regardless of role. Severity
+    ERROR because it inverts the chemistry — yields, equivalents, and
+    mass-balance checks downstream all go wrong if the wrong compound
+    is flagged limiting.
+    """
+
+    id = "CLS-011"
+    description = "Halogenating agents (NBS, NCS, Selectfluor, DAST, …) should not be flagged is_limiting=True."
+
+    _HALOGENATING_NAMES = re.compile(
+        r"\b(nbs|n[-\s]?bromosuccinimide|ncs|n[-\s]?chlorosuccinimide|"
+        r"nis|n[-\s]?iodosuccinimide|selectfluor|deoxo[-\s]?fluor|"
+        r"dast|nfsi)\b"
+    )
+
+    def check(self, draft: ReactionDraft) -> list[RuleViolation]:
+        if classify_reaction(draft).cls != ReactionClass.HALOGENATION:
+            return []
+        violations: list[RuleViolation] = []
+        for i, inp in enumerate(draft.inputs):
+            for j, comp in enumerate(inp.components):
+                if not comp.is_limiting:
+                    continue
+                n = name_of(comp)
+                if n and self._HALOGENATING_NAMES.search(n.lower()):
+                    violations.append(
+                        RuleViolation(
+                            rule_id=self.id,
+                            severity=Severity.ERROR,
+                            message=(
+                                f"is_limiting=True on a halogenating agent "
+                                f"({n!r}). The substrate is the limiting "
+                                "reagent in a halogenation, not the reagent."
+                            ),
+                            fix_hint=(
+                                "Move is_limiting=True to the organic substrate "
+                                "(typically a REACTANT) and lower this compound's "
+                                "role to REAGENT."
+                            ),
+                            path=f"inputs[{i}].components[{j}].is_limiting",
+                        )
+                    )
+        return violations
+
+
+class OxidantIsNotLimiting(Rule):
+    """CLS-012: in an oxidation, the substrate (not the oxidant) is the
+    limiting reagent.
+
+    Same anti-pattern as CLS-011, applied to DMP / Swern / mCPBA / PCC /
+    TEMPO / KMnO4 / periodate / H2O2 etc. ERROR-severity because flipping
+    the limiting reagent breaks every downstream stoichiometry check.
+    """
+
+    id = "CLS-012"
+    description = "Oxidants (DMP, Swern, PCC, mCPBA, TEMPO, KMnO4, H2O2, …) should not be flagged is_limiting=True."
+
+    _OXIDANT_NAMES = re.compile(
+        r"\b(dess[-\s]?martin|dmp|swern|moffatt|pcc|"
+        r"pyridinium chlorochromate|pdc|jones|kmno4|"
+        r"potassium permanganate|mno2|manganese dioxide|"
+        r"tempo|baib|oxone|m[-\s]?cpba|mcpba|"
+        r"3[-\s]?chloroperbenzoic|hydrogen peroxide|h2o2|"
+        r"nai04|naio4|periodate)\b"
+    )
+
+    def check(self, draft: ReactionDraft) -> list[RuleViolation]:
+        if classify_reaction(draft).cls != ReactionClass.OXIDATION:
+            return []
+        violations: list[RuleViolation] = []
+        for i, inp in enumerate(draft.inputs):
+            for j, comp in enumerate(inp.components):
+                if not comp.is_limiting:
+                    continue
+                n = name_of(comp)
+                if n and self._OXIDANT_NAMES.search(n.lower()):
+                    violations.append(
+                        RuleViolation(
+                            rule_id=self.id,
+                            severity=Severity.ERROR,
+                            message=(
+                                f"is_limiting=True on an oxidant ({n!r}). "
+                                "The substrate is the limiting reagent in "
+                                "an oxidation, not the oxidant."
+                            ),
+                            fix_hint=(
+                                "Move is_limiting=True to the alcohol / "
+                                "alkene / sulfide substrate and lower this "
+                                "compound's role to REAGENT."
+                            ),
+                            path=f"inputs[{i}].components[{j}].is_limiting",
+                        )
+                    )
+        return violations
+
+
+class NAlkylationNeedsElectrophile(Rule):
+    """CLS-013: N-alkylation needs both an amine REACTANT and an
+    alkylating electrophile (alkyl halide, mesylate, tosylate, etc.).
+
+    The classifier only fires on the literal "N-alkylation" text hint, so
+    we already know the agent labelled the reaction this way; the rule
+    enforces that both partners are structurally present in the inputs.
+    Severity WARNING because some alkylations use less-named electrophiles
+    (e.g. epoxides, Michael acceptors) we don't recognize by name.
+    """
+
+    id = "CLS-013"
+    description = "N-alkylation requires an amine REACTANT and a named electrophile."
+
+    _AMINE = re.compile(
+        r"\bamine\b|piperazine|piperidine|morpholine|amino[- ]|aniline"
+    )
+    # Matches three shapes of alkylating electrophile:
+    # - "4-bromoanisole" / "iodobenzene" / "chloroacetonitrile"
+    # - "benzyl bromide" / "methyl iodide" / "ethyl chloride"
+    # - "mesylate" / "tosylate" / "triflate" with any leading word
+    # - bare "epoxide" / "oxirane"
+    _ELECTROPHILE = re.compile(
+        r"\b\d?-?(bromo|iodo|chloro)\w+"
+        r"|\b\w+\s+(bromide|iodide|chloride)\b"
+        r"|\b\w+\s+(mesylate|tosylate|triflate)\b"
+        r"|\bepoxide\b|\boxirane\b"
+    )
+
+    def check(self, draft: ReactionDraft) -> list[RuleViolation]:
+        if classify_reaction(draft).cls != ReactionClass.N_ALKYLATION:
+            return []
+        has_amine = False
+        has_electrophile = False
+        for inp in draft.inputs:
+            for comp in inp.components:
+                if comp.reaction_role != "REACTANT":
+                    continue
+                n = name_of(comp)
+                if not n:
+                    continue
+                low = n.lower()
+                if self._AMINE.search(low):
+                    has_amine = True
+                if self._ELECTROPHILE.search(low):
+                    has_electrophile = True
+        if has_amine and has_electrophile:
+            return []
+        missing = []
+        if not has_amine:
+            missing.append("amine REACTANT")
+        if not has_electrophile:
+            missing.append("alkylating electrophile (alkyl halide / mesylate / tosylate / triflate)")
+        return [
+            RuleViolation(
+                rule_id=self.id,
+                severity=Severity.WARNING,
+                message=(
+                    f"N-alkylation declared but missing: {', '.join(missing)}."
+                ),
+                fix_hint=(
+                    "Flag both the amine and the electrophile as REACTANTs. "
+                    "If the electrophile is unusual (epoxide / Michael "
+                    "acceptor) the warning may be acceptable."
+                ),
+                path="inputs[*].components[*]",
+            )
+        ]
+
+
 CLS_RULES: list[Rule] = [
     SuzukiRequiredComponents(),
     GrignardRequiresInertAtmosphere(),
@@ -477,4 +693,8 @@ CLS_RULES: list[Rule] = [
     ReductiveAminationHasCarbonylAndAmine(),
     BuchwaldHartwigComponents(),
     MitsunobuComponents(),
+    WittigNeedsCarbonyl(),
+    HalogenatingAgentIsNotLimiting(),
+    OxidantIsNotLimiting(),
+    NAlkylationNeedsElectrophile(),
 ]
