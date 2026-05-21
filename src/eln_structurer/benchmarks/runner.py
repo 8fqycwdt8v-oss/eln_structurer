@@ -8,7 +8,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from eln_structurer.benchmarks.adapters import ADAPTERS, AdapterResult
+from eln_structurer.benchmarks.adapters import REGISTRY, AdapterResult
 from eln_structurer.benchmarks.adapters.base import (
     Adapter,
     AdapterError,
@@ -116,7 +116,7 @@ async def run_benchmark(
     runs: list[CaseRun] = []
     for case in cases:
         for adapter_name in adapter_names:
-            factory = ADAPTERS.get(adapter_name)
+            factory = REGISTRY.get(adapter_name)
             if factory is None:
                 runs.append(
                     _failure_run(case.name, adapter_name, f"UNKNOWN adapter: {adapter_name}")

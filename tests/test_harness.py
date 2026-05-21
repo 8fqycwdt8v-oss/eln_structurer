@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
-
 from eln_structurer.harness import run_harness
 from eln_structurer.schema import ReactionDraft
 from eln_structurer.tools import finalize_reaction
@@ -38,15 +36,15 @@ def test_broken_draft_produces_repair_prompt(aspirin_draft: ReactionDraft) -> No
     assert "Fix:" in prompt
 
 
-def test_finalize_reaction_writes_to_bound_slot(aspirin_draft: ReactionDraft) -> None:
+async def test_finalize_reaction_writes_to_bound_slot(
+    aspirin_draft: ReactionDraft,
+) -> None:
     """The finalize tool must write into the ContextVar-bound slot."""
     slot = FinalizedReaction()
     token = bind_finalized_slot(slot)
     try:
-        result = asyncio.run(
-            finalize_reaction.handler(
-                {"draft_json": aspirin_draft.model_dump(mode="json")}
-            )
+        result = await finalize_reaction.handler(
+            {"draft_json": aspirin_draft.model_dump(mode="json")}
         )
     finally:
         unbind_finalized_slot(token)
@@ -56,13 +54,13 @@ def test_finalize_reaction_writes_to_bound_slot(aspirin_draft: ReactionDraft) ->
     assert slot.draft is not None
 
 
-def test_finalize_reaction_refuses_outside_context(aspirin_draft: ReactionDraft) -> None:
+async def test_finalize_reaction_refuses_outside_context(
+    aspirin_draft: ReactionDraft,
+) -> None:
     """Without a bound slot the tool must error rather than dropping the result."""
     assert get_finalized() is None
-    result = asyncio.run(
-        finalize_reaction.handler(
-            {"draft_json": aspirin_draft.model_dump(mode="json")}
-        )
+    result = await finalize_reaction.handler(
+        {"draft_json": aspirin_draft.model_dump(mode="json")}
     )
     assert result.get("isError") is True
     assert "extract() context" in result["content"][0]["text"]

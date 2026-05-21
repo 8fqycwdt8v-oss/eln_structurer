@@ -5,12 +5,11 @@ All tests are offline: no LLM calls, no model downloads.
 
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
 
 import pytest
 
-from eln_structurer.benchmarks.adapters import ADAPTERS
+from eln_structurer.benchmarks.adapters import ADAPTERS, REGISTRY, AdapterRegistry
 from eln_structurer.benchmarks.adapters.base import (
     Adapter,
 )
@@ -126,22 +125,20 @@ def test_discover_fixtures_finds_three() -> None:
     assert {"aspirin", "suzuki_coupling", "grignard"} <= names
 
 
-def test_paragraph2actions_unavailable_in_base_env() -> None:
+async def test_paragraph2actions_unavailable_in_base_env() -> None:
     adapter = ADAPTERS["paragraph2actions"]()
-    available = asyncio.run(adapter.is_available())
     # Should be False in our base venv per the documented constraint.
-    assert available is False
+    assert await adapter.is_available() is False
 
 
-def test_openchemie_unavailable_in_base_env() -> None:
+async def test_openchemie_unavailable_in_base_env() -> None:
     adapter = ADAPTERS["openchemie"]()
-    available = asyncio.run(adapter.is_available())
-    assert available is False
+    assert await adapter.is_available() is False
 
 
-def test_runner_marks_unavailable_adapter() -> None:
+async def test_runner_marks_unavailable_adapter() -> None:
     cases = discover_fixtures(FIXTURES / "paragraphs", FIXTURES / "golden")
-    runs = asyncio.run(run_benchmark(cases[:1], ["paragraph2actions"]))
+    runs = await run_benchmark(cases[:1], ["paragraph2actions"])
     assert len(runs) == 1
     assert runs[0].success is False
     assert "UNAVAILABLE" in runs[0].error
@@ -162,6 +159,45 @@ class _SyntheticAdapter(Adapter):
 
     async def extract(self, paragraph: str) -> CanonicalReaction:
         return self.prediction
+
+
+def _make_factory():
+    def factory() -> _SyntheticAdapter:
+        return _SyntheticAdapter(CanonicalReaction())
+    return factory
+
+
+def test_registry_register_and_lookup() -> None:
+    reg = AdapterRegistry()
+    factory = _make_factory()
+    reg.register("synth", factory)
+    assert "synth" in reg
+    assert reg.get("synth") is factory
+    assert reg.names() == ["synth"]
+
+
+def test_registry_rejects_duplicate_registration() -> None:
+    reg = AdapterRegistry()
+    reg.register("a", _make_factory())
+    with pytest.raises(ValueError, match="already registered"):
+        reg.register("a", _make_factory())
+
+
+def test_registry_overwrite_allows_replacement() -> None:
+    reg = AdapterRegistry()
+    f1 = _make_factory()
+    f2 = _make_factory()
+    reg.register("a", f1)
+    reg.register("a", f2, overwrite=True)
+    assert reg.get("a") is f2
+
+
+def test_default_registry_has_builtin_adapters() -> None:
+    """The shipped REGISTRY exposes the four built-in adapters."""
+    for name in ("eln_structurer", "naive_llm", "paragraph2actions", "openchemie"):
+        assert name in REGISTRY
+    # And the back-compat ADAPTERS dict mirrors it.
+    assert set(ADAPTERS.keys()) == set(REGISTRY.names())
 
 
 def test_render_markdown_report_with_synthetic_runs() -> None:

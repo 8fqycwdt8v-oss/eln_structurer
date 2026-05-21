@@ -2,14 +2,50 @@
 
 Both the harness agent prompt and the naive-LLM baseline prompt pull the
 workup-verb vocabulary from this module so the two baselines stay in sync.
+The system prompt's embedded JSON schema is compressed programmatically —
+no hand-maintained copy of the schema lives anywhere.
 """
 
 from __future__ import annotations
 
 import json
 from functools import lru_cache
+from typing import Any
 
 from eln_structurer.schema import reaction_draft_json_schema
+
+
+# Pydantic's model_json_schema() output carries a lot of metadata the LLM
+# doesn't need: per-field title/description duplication, top-level title,
+# default values that match the type signature, etc. The compressor strips
+# this noise while preserving the structural information that actually
+# guides the agent (types, enums, required lists, $defs structure).
+_NOISE_KEYS = {"title", "description", "examples"}
+
+
+def _compress_schema_node(node: Any) -> Any:
+    """Recursively remove documentation-only keys from a JSON-schema node."""
+    if isinstance(node, dict):
+        return {
+            k: _compress_schema_node(v)
+            for k, v in node.items()
+            if k not in _NOISE_KEYS
+        }
+    if isinstance(node, list):
+        return [_compress_schema_node(x) for x in node]
+    return node
+
+
+@lru_cache(maxsize=1)
+def compressed_reaction_draft_schema() -> str:
+    """Return a stripped JSON-Schema string for the ReactionDraft.
+
+    Same field/type/enum content as ``reaction_draft_json_schema()``; just
+    without the noise. Cached so repeated calls return the same string.
+    """
+    compressed = _compress_schema_node(reaction_draft_json_schema())
+    return json.dumps(compressed, indent=2)
+
 
 
 WORKUP_VERB_REFERENCE = """\
@@ -57,13 +93,67 @@ Edge-case heuristics:
 
 @lru_cache(maxsize=1)
 def build_system_prompt() -> str:
-    """Build the system prompt. Cached because the embedded schema is static."""
-    schema = json.dumps(reaction_draft_json_schema(), indent=2)
+    """Build the system prompt. Cached because every embedded block is static."""
     return SYSTEM_PROMPT_TEMPLATE.format(
-        schema_json=schema,
+        schema_json=compressed_reaction_draft_schema(),
         workup_verbs=WORKUP_VERB_REFERENCE,
         heuristics=EDGE_CASE_HEURISTICS,
+        example=FEW_SHOT_EXAMPLE,
     )
+
+
+# A single minimal worked example. Kept tight so the system prompt stays
+# within prompt-cache-friendly bounds. Demonstrates the canonical shape
+# for inputs, conditions, the four-step workup pattern, and outcomes.
+FEW_SHOT_EXAMPLE = """\
+Example input paragraph:
+    To a stirred solution of benzaldehyde (1.06 g, 10.0 mmol, 1.0 equiv) in
+    methanol (10 mL) was added NaBH4 (0.45 g, 12.0 mmol, 1.2 equiv) at 0 °C.
+    The mixture was warmed to rt and stirred for 1 h, then quenched with
+    saturated NH4Cl (10 mL), extracted with EtOAc (3 × 15 mL), dried over
+    Na2SO4, and concentrated to give benzyl alcohol (0.97 g, 90%).
+
+Example draft (key fields shown):
+    {
+      "inputs": [
+        {"name": "limiting_reactant", "components": [{
+          "identifiers": [{"type": "NAME", "value": "benzaldehyde"},
+                          {"type": "SMILES", "value": "O=Cc1ccccc1"}],
+          "amount": {"value": 10.0, "units": "mmol"},
+          "reaction_role": "REACTANT", "is_limiting": true}]},
+        {"name": "reductant", "components": [{
+          "identifiers": [{"type": "NAME", "value": "NaBH4"}],
+          "amount": {"value": 1.2, "units": "equiv"},
+          "reaction_role": "REAGENT"}]},
+        {"name": "solvent", "components": [{
+          "identifiers": [{"type": "NAME", "value": "methanol"},
+                          {"type": "SMILES", "value": "CO"}],
+          "amount": {"value": 10.0, "units": "mL"},
+          "reaction_role": "SOLVENT"}]}
+      ],
+      "conditions": {
+        "temperature": {"control_type": "AMBIENT"},
+        "stirring": {"type": "MAGNETIC"},
+        "duration_minutes": 60
+      },
+      "workups": [
+        {"type": "ADDITION", "description": "Quenched with saturated NH4Cl (10 mL).",
+         "components": [{"identifiers": [{"type": "NAME", "value": "NH4Cl"}],
+                         "reaction_role": "WORKUP"}], "order": 1},
+        {"type": "EXTRACTION", "description": "Extracted with EtOAc (3 × 15 mL).",
+         "order": 2},
+        {"type": "DRY_WITH_MATERIAL", "description": "Dried over Na2SO4.", "order": 3},
+        {"type": "CONCENTRATION", "description": "Concentrated to dryness.", "order": 4}
+      ],
+      "outcomes": [{"products": [{"compound": {
+        "identifiers": [{"type": "NAME", "value": "benzyl alcohol"},
+                        {"type": "SMILES", "value": "OCc1ccccc1"}],
+        "reaction_role": "PRODUCT"},
+        "measurements": [{"type": "YIELD", "value": 90.0, "units": "%"},
+                         {"type": "AMOUNT", "value": 0.97, "units": "g"}]}]}],
+      "notes": "NaBH4 reduction; standard workup."
+    }
+"""
 
 
 SYSTEM_PROMPT_TEMPLATE = """\
@@ -107,11 +197,17 @@ then bridged to an Open Reaction Database (ORD) Reaction proto.
 
 {workup_verbs}
 
+# Worked example
+
+{example}
+
 # Allowed enum values
 
 The ReactionDraft JSON schema (below) is authoritative for all enum values.
-Pay attention to the `Literal[...]` types — values outside those lists will
-fail Pydantic validation immediately.
+Pay attention to the `enum` lists — values outside those lists fail
+Pydantic validation immediately. The schema is a compressed projection of
+the Pydantic model; documentation noise has been stripped so you focus on
+structure and types.
 
 # ReactionDraft JSON Schema
 
