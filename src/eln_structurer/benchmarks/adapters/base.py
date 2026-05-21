@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
+import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
 from eln_structurer.benchmarks.canonical import CanonicalReaction
+
+
+def anthropic_key_available() -> bool:
+    """True iff a non-empty ANTHROPIC_API_KEY is exported."""
+    return bool(os.environ.get("ANTHROPIC_API_KEY"))
 
 
 class AdapterError(RuntimeError):

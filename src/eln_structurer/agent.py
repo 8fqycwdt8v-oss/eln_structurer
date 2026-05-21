@@ -14,9 +14,10 @@ from claude_agent_sdk import (
 
 from eln_structurer.prompts import USER_PROMPT_TEMPLATE, build_system_prompt
 from eln_structurer.tools import (
-    clear_finalized,
+    FinalizedReaction,
+    bind_finalized_slot,
     finalize_reaction,
-    get_finalized,
+    unbind_finalized_slot,
     validate_reaction,
     validate_smiles,
 )
@@ -42,39 +43,39 @@ async def extract(
     debug: bool = False,
 ) -> ExtractResult:
     """Run the agent against a single paragraph, returning the finalized output."""
-    clear_finalized()
+    finalized = FinalizedReaction()
+    token = bind_finalized_slot(finalized)
     transcript: list[str] = []
+    try:
+        server = create_sdk_mcp_server(
+            name="eln",
+            version="0.1.0",
+            tools=[validate_reaction, validate_smiles, finalize_reaction],
+        )
 
-    server = create_sdk_mcp_server(
-        name="eln",
-        version="0.1.0",
-        tools=[validate_reaction, validate_smiles, finalize_reaction],
-    )
+        options = ClaudeAgentOptions(
+            model=model,
+            mcp_servers={"eln": server},
+            allowed_tools=[
+                "mcp__eln__validate_reaction",
+                "mcp__eln__validate_smiles",
+                "mcp__eln__finalize_reaction",
+            ],
+            system_prompt=build_system_prompt(),
+            # Three turns per repair iteration (think + tool + think).
+            max_turns=max_iters * 3,
+        )
 
-    options = ClaudeAgentOptions(
-        model=model,
-        mcp_servers={"eln": server},
-        allowed_tools=[
-            "mcp__eln__validate_reaction",
-            "mcp__eln__validate_smiles",
-            "mcp__eln__finalize_reaction",
-        ],
-        system_prompt=build_system_prompt(),
-        # Allow up to three turns per repair iteration (think + tool + think).
-        max_turns=max_iters * 3,
-    )
-
-    async with ClaudeSDKClient(options=options) as client:
-        await client.query(USER_PROMPT_TEMPLATE.format(paragraph=paragraph))
-        async for message in client.receive_response():
-            if isinstance(message, AssistantMessage):
-                for block in message.content:
-                    if isinstance(block, TextBlock):
-                        if debug:
+        async with ClaudeSDKClient(options=options) as client:
+            await client.query(USER_PROMPT_TEMPLATE.format(paragraph=paragraph))
+            async for message in client.receive_response():
+                if isinstance(message, AssistantMessage) and debug:
+                    for block in message.content:
+                        if isinstance(block, TextBlock):
                             transcript.append(block.text)
-            # ResultMessage signals end of session — receive_response yields it last.
+    finally:
+        unbind_finalized_slot(token)
 
-    finalized = get_finalized()
     return ExtractResult(
         success=bool(finalized.pbtxt),
         pbtxt=finalized.pbtxt,

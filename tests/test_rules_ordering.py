@@ -13,10 +13,7 @@ from eln_structurer.schema import (
     TemperatureModel,
     WorkupModel,
 )
-
-
-def _ids(violations) -> set[str]:
-    return {v.rule_id for v in violations}
+from tests.conftest import rule_ids as _ids
 
 
 def test_solvent_required_when_heating(aspirin_draft) -> None:

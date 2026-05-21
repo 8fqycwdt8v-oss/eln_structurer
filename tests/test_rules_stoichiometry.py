@@ -7,10 +7,7 @@ from eln_structurer.rules.stoichiometry import (
     PlausibleVolumes,
 )
 from eln_structurer.schema import AmountModel, ReactionDraft
-
-
-def _ids(violations) -> set[str]:
-    return {v.rule_id for v in violations}
+from tests.conftest import rule_ids as _ids
 
 
 def test_limiting_present_passes(aspirin_draft: ReactionDraft) -> None:

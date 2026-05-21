@@ -13,10 +13,7 @@ from eln_structurer.schema import (
     ProductModel,
     ReactionDraft,
 )
-
-
-def _ids(violations) -> set[str]:
-    return {v.rule_id for v in violations}
+from tests.conftest import rule_ids as _ids
 
 
 def test_smiles_parses_passes_for_valid(aspirin_draft: ReactionDraft) -> None:

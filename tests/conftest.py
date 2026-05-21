@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+
 import pytest
 
+from eln_structurer.rules.base import RuleViolation
 from eln_structurer.schema import (
     AmountModel,
     CompoundIdentifierModel,
@@ -18,6 +21,11 @@ from eln_structurer.schema import (
     TemperatureModel,
     WorkupModel,
 )
+
+
+def rule_ids(violations: Iterable[RuleViolation]) -> set[str]:
+    """Set of rule IDs from a violations iterable; reused by every rules test."""
+    return {v.rule_id for v in violations}
 
 
 def _build_aspirin_draft() -> ReactionDraft:

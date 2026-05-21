@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 from eln_structurer.agent import DEFAULT_MODEL, extract
-from eln_structurer.benchmarks.adapters.base import Adapter, AdapterError
+from eln_structurer.benchmarks.adapters.base import (
+    Adapter,
+    AdapterError,
+    anthropic_key_available,
+)
 from eln_structurer.benchmarks.canonical import (
     CanonicalReaction,
     canonicalize_ord_json,
@@ -18,9 +22,7 @@ class ElnStructurerAdapter(Adapter):
         self.max_iters = max_iters
 
     async def is_available(self) -> bool:
-        # Available iff Anthropic credentials are set (the agent checks this).
-        import os
-        return bool(os.environ.get("ANTHROPIC_API_KEY"))
+        return anthropic_key_available()
 
     async def extract(self, paragraph: str) -> CanonicalReaction:
         result = await extract(

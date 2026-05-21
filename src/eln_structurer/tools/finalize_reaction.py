@@ -1,13 +1,15 @@
 """finalize_reaction tool — emits the final ORD pbtxt and JSON.
 
-The tool stores the finalized output in a module-level slot that the calling
-agent runner picks up after the session ends. The agent itself sees only a
-short "FINALIZED" confirmation; the CLI is responsible for actually writing
-the bytes to disk or stdout.
+The tool stores the finalized output in a ``ContextVar`` slot scoped to the
+calling extract() task. This keeps concurrent extract() calls isolated
+(unlike a module-level singleton) while still letting the agent runner pick
+up the result after the SDK session ends. The agent itself sees only a
+"FINALIZED" confirmation in the tool result.
 """
 
 from __future__ import annotations
 
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -28,18 +30,31 @@ class FinalizedReaction:
     validation_summary: dict = field(default_factory=dict)
 
 
-FINALIZED_REACTION = FinalizedReaction()
+# Per-task slot. Set by ``agent.extract`` before opening the SDK session,
+# read back by ``agent.extract`` after the session closes. Concurrent
+# extract() calls in the same process see independent slots because
+# ContextVar copies its value across asyncio tasks.
+_CURRENT_FINALIZED: ContextVar[FinalizedReaction | None] = ContextVar(
+    "eln_structurer_finalized", default=None
+)
 
 
-def get_finalized() -> FinalizedReaction:
-    return FINALIZED_REACTION
+def bind_finalized_slot(slot: FinalizedReaction):
+    """Bind a fresh FinalizedReaction container to the current task.
+
+    Returns the token that must be passed to ``unbind_finalized_slot`` so the
+    previous value is restored when the extraction completes.
+    """
+    return _CURRENT_FINALIZED.set(slot)
 
 
-def clear_finalized() -> None:
-    FINALIZED_REACTION.draft = None
-    FINALIZED_REACTION.pbtxt = ""
-    FINALIZED_REACTION.json_text = ""
-    FINALIZED_REACTION.validation_summary = {}
+def unbind_finalized_slot(token) -> None:
+    _CURRENT_FINALIZED.reset(token)
+
+
+def get_finalized() -> FinalizedReaction | None:
+    """Return the current task's finalized slot, or None if no slot is bound."""
+    return _CURRENT_FINALIZED.get()
 
 
 @tool(
@@ -88,11 +103,26 @@ async def finalize_reaction(args: dict[str, Any]) -> dict[str, Any]:
             "isError": True,
         }
 
+    slot = _CURRENT_FINALIZED.get()
+    if slot is None:
+        return {
+            "content": [
+                {
+                    "type": "text",
+                    "text": (
+                        "ERROR: finalize_reaction called outside an extract() "
+                        "context. This is a tool wiring bug, not a draft problem."
+                    ),
+                }
+            ],
+            "isError": True,
+        }
+
     reaction_pb = draft_to_proto(draft)
-    FINALIZED_REACTION.draft = draft
-    FINALIZED_REACTION.pbtxt = serialize_reaction(reaction_pb, fmt="pbtxt")
-    FINALIZED_REACTION.json_text = serialize_reaction(reaction_pb, fmt="json")
-    FINALIZED_REACTION.validation_summary = report.to_dict()
+    slot.draft = draft
+    slot.pbtxt = serialize_reaction(reaction_pb, fmt="pbtxt")
+    slot.json_text = serialize_reaction(reaction_pb, fmt="json")
+    slot.validation_summary = report.to_dict()
 
     return {
         "content": [

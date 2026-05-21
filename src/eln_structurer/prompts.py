@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import json
+from functools import lru_cache
 
 from eln_structurer.schema import reaction_draft_json_schema
 
 
+@lru_cache(maxsize=1)
 def build_system_prompt() -> str:
+    """Build the system prompt. Cached because the embedded schema is static."""
     schema = json.dumps(reaction_draft_json_schema(), indent=2)
     return SYSTEM_PROMPT_TEMPLATE.format(schema_json=schema)
 

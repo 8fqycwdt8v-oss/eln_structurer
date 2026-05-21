@@ -1,19 +1,16 @@
 """Stoichiometry rules (STO-*).
 
-Uses RDKit locally to compute molecular weights from SMILES.
+Uses RDKit locally (via ``compound_utils``) to compute molecular weights.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from rdkit import Chem
-from rdkit.Chem import Descriptors
-
 from eln_structurer.rules.base import Rule, RuleViolation, Severity
+from eln_structurer.rules.compound_utils import mol_weight, smiles_of
 from eln_structurer.schema import (
     AmountModel,
-    CompoundModel,
     ReactionDraft,
 )
 
@@ -30,25 +27,11 @@ _MOLES_TO_MOLES = {"mol": 1.0, "mmol": 1e-3, "umol": 1e-6}
 _VOL_TO_LITERS = {"L": 1.0, "mL": 1e-3, "uL": 1e-6}
 
 
-def _smiles_of(comp: CompoundModel) -> str | None:
-    for ident in comp.identifiers:
-        if ident.type == "SMILES":
-            return ident.value
-    return None
-
-
-def _mw(smiles: str) -> float | None:
-    mol = Chem.MolFromSmiles(smiles)
-    if mol is None:
-        return None
-    return Descriptors.MolWt(mol)
-
-
 def _moles_from_amount(amt: AmountModel, smiles: str | None) -> _MolesEstimate:
     if amt.units in _MASS_TO_GRAMS:
         grams = amt.value * _MASS_TO_GRAMS[amt.units]
         if smiles:
-            mw = _mw(smiles)
+            mw = mol_weight(smiles)
             if mw and mw > 0:
                 return _MolesEstimate(moles=grams / mw, equivalents=None, has_mass=True)
         return _MolesEstimate(moles=None, equivalents=None, has_mass=True)
@@ -63,14 +46,28 @@ def _moles_from_amount(amt: AmountModel, smiles: str | None) -> _MolesEstimate:
     return _MolesEstimate(moles=None, equivalents=None, has_mass=False)
 
 
+def _collect_reactant_mole_estimates(
+    draft: ReactionDraft,
+) -> list[tuple[int, int, _MolesEstimate]]:
+    """One-pass collection of mole estimates for every REACTANT with an amount."""
+    out: list[tuple[int, int, _MolesEstimate]] = []
+    for i, inp in enumerate(draft.inputs):
+        for j, comp in enumerate(inp.components):
+            if comp.reaction_role != "REACTANT" or comp.amount is None:
+                continue
+            est = _moles_from_amount(comp.amount, smiles_of(comp))
+            out.append((i, j, est))
+    return out
+
+
 class AmountHasUnits(Rule):
     id = "STO-001"
     description = "Every AmountModel must have non-empty units."
 
     def check(self, draft: ReactionDraft) -> list[RuleViolation]:
-        # Pydantic enforces the units enum already, so this rule guards against
-        # the agent somehow producing an Amount with value but no units field
-        # via tool-result coercion. Defensive only.
+        # Pydantic enforces the units enum already; this rule guards against
+        # the agent producing an Amount with value but no units field via
+        # tool-result coercion. Defensive only.
         violations: list[RuleViolation] = []
         for i, inp in enumerate(draft.inputs):
             for j, comp in enumerate(inp.components):
@@ -153,19 +150,9 @@ class LimitingReagentIdentifiable(Rule):
         if len(explicit_limiting) == 1:
             return []
 
-        # No explicit flag — try to infer.
-        moles_per_component: list[tuple[int, int, float]] = []
-        for i, inp in enumerate(draft.inputs):
-            for j, comp in enumerate(inp.components):
-                if comp.reaction_role != "REACTANT":
-                    continue
-                if comp.amount is None:
-                    continue
-                est = _moles_from_amount(comp.amount, _smiles_of(comp))
-                if est.moles is not None:
-                    moles_per_component.append((i, j, est.moles))
-
-        if not moles_per_component:
+        estimates = _collect_reactant_mole_estimates(draft)
+        has_inferable_moles = any(est.moles is not None for _, _, est in estimates)
+        if not has_inferable_moles:
             return [
                 RuleViolation(
                     rule_id=self.id,
@@ -191,13 +178,13 @@ class EquivalentsConsistentWithLimiting(Rule):
     TOLERANCE = 0.10
 
     def check(self, draft: ReactionDraft) -> list[RuleViolation]:
-        # Find limiting reagent (explicit or inferred by smallest moles among REACTANTS).
+        # Determine the limiting reagent's mole count (explicit flag, else
+        # smallest mole estimate across REACTANTS).
         limiting_moles: float | None = None
-
         for inp in draft.inputs:
             for comp in inp.components:
                 if comp.is_limiting and comp.amount is not None:
-                    est = _moles_from_amount(comp.amount, _smiles_of(comp))
+                    est = _moles_from_amount(comp.amount, smiles_of(comp))
                     if est.moles is not None:
                         limiting_moles = est.moles
                         break
@@ -205,14 +192,10 @@ class EquivalentsConsistentWithLimiting(Rule):
                 break
 
         if limiting_moles is None:
-            mole_counts: list[float] = []
-            for inp in draft.inputs:
-                for comp in inp.components:
-                    if comp.reaction_role != "REACTANT" or comp.amount is None:
-                        continue
-                    est = _moles_from_amount(comp.amount, _smiles_of(comp))
-                    if est.moles is not None:
-                        mole_counts.append(est.moles)
+            mole_counts = [
+                est.moles for _, _, est in _collect_reactant_mole_estimates(draft)
+                if est.moles is not None
+            ]
             if mole_counts:
                 limiting_moles = min(mole_counts)
 
@@ -222,14 +205,9 @@ class EquivalentsConsistentWithLimiting(Rule):
         violations: list[RuleViolation] = []
         for i, inp in enumerate(draft.inputs):
             for j, comp in enumerate(inp.components):
-                if comp.amount is None:
+                if comp.amount is None or comp.amount.units != "equiv":
                     continue
-                if comp.amount.units != "equiv":
-                    continue
-                claimed = comp.amount.value
-                # Look at other amount info on the same compound across inputs
-                # is overkill for v1 — we only check rough sanity: claimed > 0.
-                if claimed <= 0:
+                if comp.amount.value <= 0:
                     violations.append(
                         RuleViolation(
                             rule_id=self.id,

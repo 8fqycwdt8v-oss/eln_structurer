@@ -9,7 +9,6 @@ to avoid adding the bare anthropic SDK as a second dependency.
 from __future__ import annotations
 
 import json
-import os
 import re
 
 from claude_agent_sdk import (
@@ -19,7 +18,11 @@ from claude_agent_sdk import (
     query,
 )
 
-from eln_structurer.benchmarks.adapters.base import Adapter, AdapterError
+from eln_structurer.benchmarks.adapters.base import (
+    Adapter,
+    AdapterError,
+    anthropic_key_available,
+)
 from eln_structurer.benchmarks.canonical import CanonicalReaction
 
 
@@ -78,7 +81,7 @@ class NaiveLlmAdapter(Adapter):
         self.model = model
 
     async def is_available(self) -> bool:
-        return bool(os.environ.get("ANTHROPIC_API_KEY"))
+        return anthropic_key_available()
 
     async def extract(self, paragraph: str) -> CanonicalReaction:
         options = ClaudeAgentOptions(

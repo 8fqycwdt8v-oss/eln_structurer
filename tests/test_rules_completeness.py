@@ -11,10 +11,7 @@ from eln_structurer.rules.completeness import (
 )
 from eln_structurer.rules.base import Severity
 from eln_structurer.schema import ReactionDraft
-
-
-def _ids(violations) -> set[str]:
-    return {v.rule_id for v in violations}
+from tests.conftest import rule_ids as _ids
 
 
 def test_has_reactant_passes(aspirin_draft: ReactionDraft) -> None:

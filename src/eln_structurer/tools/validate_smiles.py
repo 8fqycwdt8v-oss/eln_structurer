@@ -5,11 +5,10 @@ from __future__ import annotations
 from typing import Any
 
 from rdkit import Chem
-from rdkit import RDLogger
 
 from claude_agent_sdk import tool
 
-RDLogger.DisableLog("rdApp.*")
+from eln_structurer.rules.compound_utils import parse_mol
 
 
 @tool(
@@ -30,7 +29,7 @@ async def validate_smiles(args: dict[str, Any]) -> dict[str, Any]:
             ],
             "isError": True,
         }
-    mol = Chem.MolFromSmiles(smiles)
+    mol = parse_mol(smiles)
     if mol is None:
         return {
             "content": [

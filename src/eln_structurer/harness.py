@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from typing import Any
 
 from eln_structurer.proto_bridge import ProtoBridgeError, draft_to_proto
 from eln_structurer.rules import ALL_RULES, RuleViolation, Severity
 from eln_structurer.schema import ReactionDraft
+
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -88,6 +91,7 @@ def _run_ord_schema_validation(draft: ReactionDraft) -> tuple[list[str], list[st
     except ProtoBridgeError as exc:
         return [], [], str(exc)
     except Exception as exc:  # pragma: no cover — defensive
+        log.exception("Unexpected error in draft_to_proto")
         return [], [], f"Unexpected bridge error: {exc!r}"
 
     try:
@@ -108,6 +112,7 @@ def run_harness(draft: ReactionDraft) -> ValidationReport:
         try:
             violations = rule.check(draft)
         except Exception as exc:  # pragma: no cover — defensive
+            log.exception("Rule %s raised", rule.id)
             report.errors.append(
                 RuleViolation(
                     rule_id=rule.id,

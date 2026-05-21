@@ -32,14 +32,9 @@ def normalize_smiles(smiles: str) -> str:
     """Canonicalize a SMILES via RDKit; returns input on parse failure."""
     if not smiles:
         return ""
-    try:
-        from rdkit import Chem
-        mol = Chem.MolFromSmiles(smiles)
-        if mol is None:
-            return smiles
-        return Chem.MolToSmiles(mol)
-    except Exception:  # pragma: no cover — defensive
-        return smiles
+    from eln_structurer.rules.compound_utils import canonical_smiles
+
+    return canonical_smiles(smiles) or smiles
 
 
 @dataclass

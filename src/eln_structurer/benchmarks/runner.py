@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -15,6 +16,8 @@ from eln_structurer.benchmarks.adapters.base import (
 )
 from eln_structurer.benchmarks.canonical import CanonicalReaction, load_gold
 from eln_structurer.benchmarks.scoring import FieldScore, macro_f1, score_against_gold
+
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -33,6 +36,20 @@ class CaseRun:
     elapsed_seconds: float
     macro_f1: float | None
     field_scores: list[FieldScore]
+
+
+def _failure_run(
+    fixture: str, adapter: str, error: str, elapsed: float = 0.0
+) -> CaseRun:
+    return CaseRun(
+        fixture=fixture,
+        adapter=adapter,
+        success=False,
+        error=error,
+        elapsed_seconds=elapsed,
+        macro_f1=None,
+        field_scores=[],
+    )
 
 
 def discover_fixtures(
@@ -81,6 +98,7 @@ async def run_adapter(adapter: Adapter, paragraph: str) -> AdapterResult:
             elapsed_seconds=time.monotonic() - start,
         )
     except Exception as exc:  # noqa: BLE001 — log and continue
+        log.exception("Unexpected error in adapter %r", adapter.name)
         return AdapterResult(
             adapter_name=adapter.name,
             success=False,
@@ -101,30 +119,13 @@ async def run_benchmark(
             factory = ADAPTERS.get(adapter_name)
             if factory is None:
                 runs.append(
-                    CaseRun(
-                        fixture=case.name,
-                        adapter=adapter_name,
-                        success=False,
-                        error=f"UNKNOWN adapter: {adapter_name}",
-                        elapsed_seconds=0.0,
-                        macro_f1=None,
-                        field_scores=[],
-                    )
+                    _failure_run(case.name, adapter_name, f"UNKNOWN adapter: {adapter_name}")
                 )
                 continue
             adapter = factory()
-            available = await adapter.is_available()
-            if not available:
+            if not await adapter.is_available():
                 runs.append(
-                    CaseRun(
-                        fixture=case.name,
-                        adapter=adapter_name,
-                        success=False,
-                        error="UNAVAILABLE (precheck)",
-                        elapsed_seconds=0.0,
-                        macro_f1=None,
-                        field_scores=[],
-                    )
+                    _failure_run(case.name, adapter_name, "UNAVAILABLE (precheck)")
                 )
                 continue
             result = await run_adapter(adapter, case.paragraph)
@@ -143,14 +144,9 @@ async def run_benchmark(
                 )
             else:
                 runs.append(
-                    CaseRun(
-                        fixture=case.name,
-                        adapter=adapter_name,
-                        success=False,
-                        error=result.error,
-                        elapsed_seconds=result.elapsed_seconds,
-                        macro_f1=None,
-                        field_scores=[],
+                    _failure_run(
+                        case.name, adapter_name, result.error or "unknown",
+                        elapsed=result.elapsed_seconds,
                     )
                 )
     return runs
