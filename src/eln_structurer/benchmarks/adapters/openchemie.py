@@ -1,10 +1,18 @@
 """Adapter for MIT/Coley's OpenChemIE.
 
-OpenChemIE is a multimodal pipeline targeted at full chemistry papers (text +
-tables + reaction schemes). For our single-paragraph benchmark we use only its
-text-extraction subcomponent. The package is heavyweight (PyTorch + several
-model checkpoints) and is not installed in the base venv; see
-scripts/setup_bench_envs.sh.
+⚠️  UNVERIFIED & SCOPE-MISMATCH. The real OpenChemIE public API is
+PDF-centric — its text-extraction methods are
+``extract_reactions_from_text_in_pdf(pdf_path)`` and
+``extract_reactions_from_text_in_pdf_combined(pdf_path)``, both of which
+take a PDF file path rather than a string. There is no public
+``extract_reactions_from_text(list[str])`` entry point.
+
+For our single-paragraph benchmark we need to either (a) wrap the paragraph
+into a minimal one-page PDF on the fly, or (b) drop this adapter and
+acknowledge that OpenChemIE isn't designed for raw-text-string input.
+The current implementation calls a non-existent method and will raise
+``AttributeError`` the moment the underlying package is installed; treat
+it as a stub until someone wires in the PDF wrapping path.
 """
 
 from __future__ import annotations
@@ -16,14 +24,15 @@ from eln_structurer.benchmarks.adapters.base import (
     AdapterError,
     AdapterUnavailable,
 )
-from eln_structurer.benchmarks.canonical import CanonicalReaction, normalize_name
+from eln_structurer.benchmarks.canonical import CanonicalReaction
 
 
 class OpenChemIEAdapter(Adapter):
     name = "openchemie"
 
-    def __init__(self) -> None:
+    def __init__(self, *, device: str = "cpu") -> None:
         self._model = None
+        self.device = device
 
     async def is_available(self) -> bool:
         try:
@@ -46,29 +55,19 @@ class OpenChemIEAdapter(Adapter):
             cls = oce.OpenChemIE  # type: ignore[attr-defined]
         except AttributeError as exc:
             raise AdapterError(f"OpenChemIE class not found: {exc}") from exc
-        self._model = cls()
+        self._model = cls(device=self.device)
         return self._model
 
     async def extract(self, paragraph: str) -> CanonicalReaction:
-        model = self._load()
-        try:
-            reactions = model.extract_reactions_from_text([paragraph])
-        except Exception as exc:  # pragma: no cover — depends on installed model
-            raise AdapterError(f"openchemie runtime error: {exc}") from exc
-
-        canon = CanonicalReaction()
-        for rxn_list in reactions:
-            for rxn in rxn_list:
-                for r in (rxn.get("reactants") or []):
-                    name = r.get("text") or r.get("name")
-                    if name:
-                        canon.reactant_names.add(normalize_name(name))
-                for p in (rxn.get("products") or []):
-                    name = p.get("text") or p.get("name")
-                    if name:
-                        canon.product_names.add(normalize_name(name))
-                for cond in (rxn.get("conditions") or []):
-                    name = cond.get("text")
-                    if name:
-                        canon.reagent_names.add(normalize_name(name))
-        return canon
+        # OpenChemIE's text path expects a PDF, not a paragraph string. Until
+        # someone wires up an on-the-fly PDF wrapper, this method raises and
+        # the runner records the adapter as failed for that fixture.
+        self._load()
+        raise AdapterError(
+            "OpenChemIE's text-extraction API expects a PDF path, not a "
+            "paragraph string. Wrap the paragraph into a single-page PDF "
+            "(reportlab / fpdf) and call extract_reactions_from_text_in_pdf "
+            "before this adapter can produce a CanonicalReaction. "
+            "Adapter intentionally left unimplemented to avoid silent wrong "
+            "results — see the module docstring."
+        )

@@ -41,8 +41,9 @@ then bridged to an Open Reaction Database (ORD) Reaction proto.
   `validate_smiles` to confirm that a SMILES parses before committing it. If you
   are uncertain about a SMILES, omit the SMILES identifier and keep only the
   NAME — that is safer than guessing wrong.
-- DO NOT call any external network service. The Anthropic API and the in-process
-  validation tools are the only available tools.
+- The only tools available are the three in-process tools provided
+  (`validate_reaction`, `validate_smiles`, `finalize_reaction`). There is no
+  internet access and no other tools to call.
 - For ambient temperature ("rt", "room temperature"), set
   `conditions.temperature.control_type = "AMBIENT"` and leave setpoint_celsius
   null. For "reflux", use control_type "REFLUX".
@@ -66,9 +67,11 @@ fail Pydantic validation immediately.
 
 # Stopping
 
-Call `finalize_reaction` once, when validation is clean. After that, your
-response ends. If after several iterations you cannot reach a clean state,
-explain the remaining issue in plain text and stop — do not loop forever.
+You have a bounded budget of repair iterations (the runner caps this; treat
+five validate→fix cycles as the practical maximum). Call `finalize_reaction`
+exactly once when validation reports clean. After that, your response ends.
+If errors persist after several iterations, explain the remaining issue in
+plain text and stop — do not loop forever.
 """
 
 

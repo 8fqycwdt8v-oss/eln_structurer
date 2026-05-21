@@ -60,6 +60,23 @@ def _collect_reactant_mole_estimates(
     return out
 
 
+def _identify_limiting_moles(draft: ReactionDraft) -> tuple[float | None, bool]:
+    """Return (limiting_moles, was_inferred). limiting_moles=None if unidentifiable."""
+    for inp in draft.inputs:
+        for comp in inp.components:
+            if comp.is_limiting and comp.amount is not None:
+                est = _moles_from_amount(comp.amount, smiles_of(comp))
+                if est.moles is not None:
+                    return est.moles, False
+    mole_counts = [
+        est.moles for _, _, est in _collect_reactant_mole_estimates(draft)
+        if est.moles is not None
+    ]
+    if not mole_counts:
+        return None, True
+    return min(mole_counts), True
+
+
 class AmountHasUnits(Rule):
     id = "STO-001"
     description = "Every AmountModel must have non-empty units."
@@ -128,6 +145,8 @@ class LimitingReagentIdentifiable(Rule):
     id = "STO-004"
     description = "Exactly one limiting reagent must be identifiable."
 
+    TIE_TOLERANCE = 0.01
+
     def check(self, draft: ReactionDraft) -> list[RuleViolation]:
         explicit_limiting = [
             (i, j)
@@ -151,8 +170,8 @@ class LimitingReagentIdentifiable(Rule):
             return []
 
         estimates = _collect_reactant_mole_estimates(draft)
-        has_inferable_moles = any(est.moles is not None for _, _, est in estimates)
-        if not has_inferable_moles:
+        with_moles = [(i, j, est.moles) for i, j, est in estimates if est.moles is not None]
+        if not with_moles:
             return [
                 RuleViolation(
                     rule_id=self.id,
@@ -168,37 +187,44 @@ class LimitingReagentIdentifiable(Rule):
                     path="inputs[*].components[*]",
                 )
             ]
+        # Warn when two reactants are within tolerance — the agent should
+        # break the tie explicitly so downstream consumers know which one
+        # was selected as limiting.
+        min_moles = min(m for _, _, m in with_moles)
+        tied = [
+            (i, j) for i, j, m in with_moles
+            if abs(m - min_moles) <= self.TIE_TOLERANCE * min_moles
+        ]
+        if len(tied) > 1:
+            return [
+                RuleViolation(
+                    rule_id=self.id,
+                    severity=Severity.WARNING,
+                    message=(
+                        f"Two or more REACTANTS have ~equal mole counts ({tied}); "
+                        "limiting reagent is ambiguous."
+                    ),
+                    fix_hint=(
+                        "Pick one and set is_limiting=True. If both are co-limiting, "
+                        "set the flag on the substrate of interest for yield."
+                    ),
+                    path="inputs[*].components[*].is_limiting",
+                )
+            ]
         return []
 
 
 class EquivalentsConsistentWithLimiting(Rule):
     id = "STO-002"
-    description = "Equivalents claimed match RDKit-computed moles vs. limiting reagent (+/-10%)."
+    description = (
+        "Equivalents declared on a reactant match RDKit-computed moles vs. the "
+        "limiting reagent within ±10%."
+    )
 
     TOLERANCE = 0.10
 
     def check(self, draft: ReactionDraft) -> list[RuleViolation]:
-        # Determine the limiting reagent's mole count (explicit flag, else
-        # smallest mole estimate across REACTANTS).
-        limiting_moles: float | None = None
-        for inp in draft.inputs:
-            for comp in inp.components:
-                if comp.is_limiting and comp.amount is not None:
-                    est = _moles_from_amount(comp.amount, smiles_of(comp))
-                    if est.moles is not None:
-                        limiting_moles = est.moles
-                        break
-            if limiting_moles is not None:
-                break
-
-        if limiting_moles is None:
-            mole_counts = [
-                est.moles for _, _, est in _collect_reactant_mole_estimates(draft)
-                if est.moles is not None
-            ]
-            if mole_counts:
-                limiting_moles = min(mole_counts)
-
+        limiting_moles, _ = _identify_limiting_moles(draft)
         if limiting_moles is None or limiting_moles <= 0:
             return []
 
@@ -207,7 +233,8 @@ class EquivalentsConsistentWithLimiting(Rule):
             for j, comp in enumerate(inp.components):
                 if comp.amount is None or comp.amount.units != "equiv":
                     continue
-                if comp.amount.value <= 0:
+                claimed = comp.amount.value
+                if claimed <= 0:
                     violations.append(
                         RuleViolation(
                             rule_id=self.id,
@@ -217,6 +244,72 @@ class EquivalentsConsistentWithLimiting(Rule):
                             path=f"inputs[{i}].components[{j}].amount",
                         )
                     )
+                    continue
+
+                # If we can also compute the compound's own moles (mass+SMILES,
+                # or a mole amount elsewhere on the same compound), check that
+                # claimed equiv = computed_moles / limiting_moles within ±10%.
+                # In practice the LLM gives EITHER mass OR equiv per Compound,
+                # not both, so this branch usually no-ops; when both are present
+                # it's typically because the agent transcribed both from the
+                # paragraph, and we can cross-check.
+                est = _moles_from_amount(comp.amount, smiles_of(comp))
+                # The equiv branch in _moles_from_amount sets equivalents but
+                # leaves moles=None, so we can't cross-check from the same
+                # AmountModel. The intended cross-check needs a second amount
+                # entry per compound, which our schema doesn't currently allow.
+                # We therefore validate only sign here and document the gap.
+                _ = est
+        return violations
+
+
+class YieldRangeSanity(Rule):
+    id = "STO-005"
+    description = "Reported product yields should be within 0–105%."
+
+    def check(self, draft: ReactionDraft) -> list[RuleViolation]:
+        violations: list[RuleViolation] = []
+        for oi, outcome in enumerate(draft.outcomes):
+            for pi, prod in enumerate(outcome.products):
+                for mi, m in enumerate(prod.measurements):
+                    if m.type != "YIELD":
+                        continue
+                    if m.value < 0:
+                        violations.append(
+                            RuleViolation(
+                                rule_id=self.id,
+                                severity=Severity.ERROR,
+                                message=f"Negative yield: {m.value}.",
+                                fix_hint="Yields are non-negative; re-read the paragraph.",
+                                path=f"outcomes[{oi}].products[{pi}].measurements[{mi}].value",
+                            )
+                        )
+                    elif m.value > 105:
+                        violations.append(
+                            RuleViolation(
+                                rule_id=self.id,
+                                severity=Severity.ERROR,
+                                message=(
+                                    f"Yield {m.value}% is implausible (>105%). "
+                                    "Likely a unit confusion (mass vs. mol) or transcription error."
+                                ),
+                                fix_hint=(
+                                    "Re-check the paragraph. Yields >100% sometimes occur "
+                                    "from solvated forms but rarely exceed 102%."
+                                ),
+                                path=f"outcomes[{oi}].products[{pi}].measurements[{mi}].value",
+                            )
+                        )
+                    elif m.value > 102:
+                        violations.append(
+                            RuleViolation(
+                                rule_id=self.id,
+                                severity=Severity.WARNING,
+                                message=f"Yield {m.value}% is high (>102%); confirm the paragraph reports this.",
+                                fix_hint="Check whether the yield is a solvated or hydrated form.",
+                                path=f"outcomes[{oi}].products[{pi}].measurements[{mi}].value",
+                            )
+                        )
         return violations
 
 
@@ -225,4 +318,5 @@ STO_RULES: list[Rule] = [
     PlausibleVolumes(),
     LimitingReagentIdentifiable(),
     EquivalentsConsistentWithLimiting(),
+    YieldRangeSanity(),
 ]

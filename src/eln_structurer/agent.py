@@ -13,13 +13,11 @@ from claude_agent_sdk import (
 )
 
 from eln_structurer.prompts import USER_PROMPT_TEMPLATE, build_system_prompt
-from eln_structurer.tools import (
+from eln_structurer.tools import finalize_reaction, validate_reaction, validate_smiles
+from eln_structurer.tools.finalize_reaction import (
     FinalizedReaction,
     bind_finalized_slot,
-    finalize_reaction,
     unbind_finalized_slot,
-    validate_reaction,
-    validate_smiles,
 )
 
 

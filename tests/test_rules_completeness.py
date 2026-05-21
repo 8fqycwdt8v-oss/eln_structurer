@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 from eln_structurer.rules.completeness import (
+    DurationRangeSanity,
     HasDuration,
     HasProduct,
     HasReactant,
     HasTemperature,
     NotesCaptureSource,
+    TemperatureRangeSanity,
 )
 from eln_structurer.rules.base import Severity
-from eln_structurer.schema import ReactionDraft
+from eln_structurer.schema import ReactionDraft, TemperatureModel
 from tests.conftest import rule_ids as _ids
 
 
@@ -74,3 +76,36 @@ def test_notes_capture_source(aspirin_draft: ReactionDraft) -> None:
     aspirin_draft.notes = None
     violations = NotesCaptureSource().check(aspirin_draft)
     assert "CMP-005" in _ids(violations)
+
+
+def test_temperature_range_passes_for_reasonable(aspirin_draft: ReactionDraft) -> None:
+    assert TemperatureRangeSanity().check(aspirin_draft) == []
+
+
+def test_temperature_range_errors_above_300c(aspirin_draft: ReactionDraft) -> None:
+    aspirin_draft.conditions.temperature = TemperatureModel(
+        setpoint_celsius=500.0, control_type="HEATER"
+    )
+    violations = TemperatureRangeSanity().check(aspirin_draft)
+    assert "CMP-006" in _ids(violations)
+    assert violations[0].severity is Severity.ERROR
+
+
+def test_temperature_range_errors_below_minus_100c(aspirin_draft: ReactionDraft) -> None:
+    aspirin_draft.conditions.temperature = TemperatureModel(
+        setpoint_celsius=-200.0, control_type="LIQUID_NITROGEN"
+    )
+    violations = TemperatureRangeSanity().check(aspirin_draft)
+    assert "CMP-006" in _ids(violations)
+
+
+def test_duration_range_errors_above_two_weeks(aspirin_draft: ReactionDraft) -> None:
+    aspirin_draft.conditions.duration_minutes = 60 * 24 * 30  # 30 days
+    violations = DurationRangeSanity().check(aspirin_draft)
+    assert "CMP-007" in _ids(violations)
+
+
+def test_duration_range_errors_negative(aspirin_draft: ReactionDraft) -> None:
+    aspirin_draft.conditions.duration_minutes = -5.0
+    violations = DurationRangeSanity().check(aspirin_draft)
+    assert "CMP-007" in _ids(violations)

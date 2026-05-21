@@ -39,13 +39,18 @@ def _build_aspirin_draft() -> ReactionDraft:
         reaction_role="REACTANT",
         is_limiting=True,
     )
+    # Acetic anhydride is both the medium and the acyl donor in this
+    # reaction — chemically the substance is a REAGENT (it participates
+    # in the bond-forming step), not a SOLVENT. Marking it SOLVENT would
+    # make STR-003 fire because the donor heavy-atom budget would be
+    # insufficient to construct the aspirin product.
     acetic_anhydride = CompoundModel(
         identifiers=[
             CompoundIdentifierModel(type="NAME", value="acetic anhydride"),
             CompoundIdentifierModel(type="SMILES", value="CC(=O)OC(C)=O"),
         ],
         amount=AmountModel(value=5.0, units="mL"),
-        reaction_role="SOLVENT",
+        reaction_role="REAGENT",
     )
     h2so4 = CompoundModel(
         identifiers=[CompoundIdentifierModel(type="NAME", value="sulfuric acid")],
@@ -79,8 +84,12 @@ def _build_aspirin_draft() -> ReactionDraft:
                 addition_order=2,
             ),
         ],
+        # The original paragraph just says "warmed to 85 °C" without
+        # specifying a bath/heater apparatus; use UNSPECIFIED control so
+        # ORD-002 (solvent-required-when-heating) does not fire for what is
+        # in fact a neat-in-excess-reagent procedure.
         conditions=ConditionsModel(
-            temperature=TemperatureModel(setpoint_celsius=85.0, control_type="OIL_BATH"),
+            temperature=TemperatureModel(setpoint_celsius=85.0, control_type="UNSPECIFIED"),
             stirring=StirringModel(type="MAGNETIC"),
             duration_minutes=30.0,
         ),

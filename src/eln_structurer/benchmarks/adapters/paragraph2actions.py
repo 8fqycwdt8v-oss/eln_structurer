@@ -1,12 +1,24 @@
 """Adapter for IBM's paragraph2actions (rxn4chemistry).
 
-paragraph2actions emits an action sequence (STIR, FILTER, ADD, DRYSOLUTION,
-NOACTION, plus a handful of others). We normalize that vocabulary to ORD
-workup types and extract reactant/product names from ADD-style actions.
+paragraph2actions emits an action sequence built from a fixed action
+vocabulary (Add, Stir, Wait, Filter, Wash, Extract, Concentrate, DrySolid,
+DrySolution, Reflux, Degas, MakeSolution, Microwave, CollectLayer, Yield,
+plus the "fake" actions NoAction / InvalidAction / OtherLanguage /
+FollowOtherProcedure). We normalize that vocabulary to ORD workup types and
+extract reactant names from Add-style actions.
 
-paragraph2actions pins an old torch (<1.5) that conflicts with our base venv
-on Python 3.11. Install it in a separate environment per
-scripts/setup_bench_envs.sh and run the benchmark with that env active.
+⚠️  UNVERIFIED. The adapter was authored without ever running the real
+package — paragraph2actions pins an old torch (<1.5) that conflicts with
+our base venv on Python 3.11, and was never installed during development.
+The class / module paths below match the GitHub README's documented API
+but have not been exercised end-to-end. When you actually install the
+package via scripts/setup_bench_envs.sh, expect to debug:
+- the import path may be `paragraph2actions.readable_converter` rather
+  than `action_extractor` (the README is unclear)
+- the model may require an explicit checkpoint path argument
+- the action class attribute names (.action_name, .material) are educated
+  guesses from the upstream source
+Treat this adapter as a starting scaffold, not a working integration.
 """
 
 from __future__ import annotations
@@ -21,27 +33,28 @@ from eln_structurer.benchmarks.adapters.base import (
 from eln_structurer.benchmarks.canonical import CanonicalReaction, normalize_name
 
 
+# Map of real paragraph2actions action class names (uppercased) to the
+# closest ORD workup type. NoAction / InvalidAction are dropped via None.
 _VERB_MAP = {
+    "ADD": "ADDITION",
     "STIR": "STIRRING",
     "WAIT": "WAIT",
     "FILTER": "FILTRATION",
-    "DRYSOLUTION": "DRY_WITH_MATERIAL",
-    "DRYSOLID": "DRY_WITH_MATERIAL",
     "WASH": "WASH",
-    "CONCENTRATE": "CONCENTRATION",
     "EXTRACT": "EXTRACTION",
-    "PURIFY": "FLASH_CHROMATOGRAPHY",
-    "PH": "PH_ADJUST",
-    "QUENCH": "ADDITION",
+    "CONCENTRATE": "CONCENTRATION",
+    "DRYSOLID": "DRY_WITH_MATERIAL",
+    "DRYSOLUTION": "DRY_WITH_MATERIAL",
+    "REFLUX": "TEMPERATURE",
+    "DEGAS": "CUSTOM",
     "MAKESOLUTION": "DISSOLUTION",
-    "ADD": "ADDITION",
-    "PARTITION": "EXTRACTION",
-    "DISTILL": "DISTILLATION",
-    "RECRYSTALLIZE": "CUSTOM",
-    "REMOVE": "CONCENTRATION",
+    "MICROWAVE": "TEMPERATURE",
     "COLLECTLAYER": "EXTRACTION",
-    "PHASESEP": "EXTRACTION",
+    "YIELD": None,         # paragraph2actions Yield carries product data, not a workup
     "NOACTION": None,
+    "INVALIDACTION": None,
+    "OTHERLANGUAGE": None,
+    "FOLLOWOTHERPROCEDURE": None,
 }
 
 

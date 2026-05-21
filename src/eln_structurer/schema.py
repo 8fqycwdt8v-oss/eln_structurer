@@ -69,6 +69,14 @@ class AmountModel(BaseModel):
     value: float = Field(..., description="Numeric value, e.g. 1.25")
     units: AmountUnit = Field(..., description="One of the allowed unit strings")
 
+    @model_validator(mode="after")
+    def _positive_value(self) -> "AmountModel":
+        if self.value <= 0:
+            raise ValueError(
+                f"Amount value must be > 0 (got {self.value} {self.units})"
+            )
+        return self
+
 
 class CompoundIdentifierModel(BaseModel):
     """One way of naming a compound (NAME, SMILES, CAS, ...)."""

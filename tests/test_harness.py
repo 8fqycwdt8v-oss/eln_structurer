@@ -6,10 +6,10 @@ import asyncio
 
 from eln_structurer.harness import run_harness
 from eln_structurer.schema import ReactionDraft
-from eln_structurer.tools import (
+from eln_structurer.tools import finalize_reaction
+from eln_structurer.tools.finalize_reaction import (
     FinalizedReaction,
     bind_finalized_slot,
-    finalize_reaction,
     get_finalized,
     unbind_finalized_slot,
 )

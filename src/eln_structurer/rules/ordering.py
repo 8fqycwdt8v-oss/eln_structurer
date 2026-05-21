@@ -17,56 +17,117 @@ _QUENCH_PATTERNS = [
 ]
 
 
-def _input_names_lower(draft: ReactionDraft) -> set[str]:
-    """All lowercased NAME identifiers appearing in inputs."""
+# Common workup reagents that often appear in a workup `description` but get
+# forgotten as Compound entries in `workup.components`. Matching is
+# substring/case-insensitive on the description text, after a light cleanup.
+_WORKUP_KEYWORDS = {
+    "brine": "brine",
+    "celite": "Celite",
+    "na2so4": "Na2SO4",
+    "magnesium sulfate": "MgSO4",
+    "mgso4": "MgSO4",
+    "sodium sulfate": "Na2SO4",
+    "k2co3": "K2CO3",
+    "nahco3": "NaHCO3",
+    "nh4cl": "NH4Cl",
+    "water": "water",
+    "ethyl acetate": "ethyl acetate",
+    "etoac": "ethyl acetate",
+    "hexanes": "hexanes",
+    "hexane": "hexanes",
+    "dichloromethane": "DCM",
+    "dcm": "DCM",
+    "ether": "diethyl ether",
+    "diethyl ether": "diethyl ether",
+    "et2o": "diethyl ether",
+    "methanol": "methanol",
+    "meoh": "methanol",
+}
+
+
+def _declared_compound_names(draft: ReactionDraft) -> set[str]:
+    """All lowercased NAME/IUPAC_NAME identifiers across inputs and workups."""
     names: set[str] = set()
     for inp in draft.inputs:
         for comp in inp.components:
             for ident in comp.identifiers:
                 if ident.type in {"NAME", "IUPAC_NAME"}:
                     names.add(ident.value.strip().lower())
+    for wu in draft.workups:
+        for comp in wu.components:
+            for ident in comp.identifiers:
+                if ident.type in {"NAME", "IUPAC_NAME"}:
+                    names.add(ident.value.strip().lower())
     return names
 
 
-class ReagentsIntroducedBeforeUse(Rule):
+class WorkupKeywordsDeclared(Rule):
+    """ORD-001: workup descriptions mentioning a known workup reagent must
+    have that reagent declared as a Compound somewhere in the draft.
+
+    This catches the common LLM mistake of describing a wash in prose
+    ("washed with brine") without ever attaching brine as a structured
+    component.
+    """
+
     id = "ORD-001"
-    description = "Compounds named in a workup must have been added as an input first."
+    description = (
+        "Workup description text must not reference a known workup reagent "
+        "(brine, Celite, Na2SO4, etc.) that is not declared as a Compound "
+        "anywhere in the draft."
+    )
 
     def check(self, draft: ReactionDraft) -> list[RuleViolation]:
-        input_names = _input_names_lower(draft)
+        declared = _declared_compound_names(draft)
         violations: list[RuleViolation] = []
         for idx, wu in enumerate(draft.workups):
-            for jdx, comp in enumerate(wu.components):
-                for ident in comp.identifiers:
-                    if ident.type not in {"NAME", "IUPAC_NAME"}:
-                        continue
-                    if ident.value.strip().lower() in input_names:
-                        continue
-                    # Workup-added reagents (e.g. wash solvents) are legitimate.
-                    # Only flag if the workup itself looks like it refers back
-                    # to an input reagent (rare; we treat all workup components
-                    # as introduced-by-workup and skip this check).
-                    # So actually: skip — workup components are explicitly introduced.
-                    pass
-        # The more useful check: are any input-required reagents missing entirely?
-        # Defer to completeness rules; here we only emit if workup *description*
-        # references reagents not declared anywhere.
+            text = (wu.description or "").lower()
+            for keyword, canonical in _WORKUP_KEYWORDS.items():
+                if keyword not in text:
+                    continue
+                # Cheap match — already declared under any spelling we know?
+                if canonical.lower() in declared or keyword in declared:
+                    continue
+                violations.append(
+                    RuleViolation(
+                        rule_id=self.id,
+                        severity=Severity.WARNING,
+                        message=(
+                            f"Workup #{idx} description mentions {canonical!r} but "
+                            "no input or workup.components entry declares it."
+                        ),
+                        fix_hint=(
+                            f"Add {canonical!r} to workups[{idx}].components with "
+                            "reaction_role='WORKUP', so the structured record "
+                            "matches the prose."
+                        ),
+                        path=f"workups[{idx}].description",
+                    )
+                )
         return violations
+
+
+# Active heating control types — anything where energy is intentionally
+# supplied to the vessel. AMBIENT and ICE_BATH / LIQUID_NITROGEN are cooling
+# or passive; UNSPECIFIED means "we don't know".
+_HEATING_CONTROL_TYPES = {"OIL_BATH", "WATER_BATH", "HEATER", "REFLUX"}
 
 
 class SolventPresentBeforeHeating(Rule):
     id = "ORD-002"
     description = (
-        "If conditions.temperature.setpoint is non-ambient, at least one input "
-        "must be flagged as SOLVENT."
+        "Heated reactions (control_type in {OIL_BATH, WATER_BATH, HEATER, "
+        "REFLUX}) must declare a SOLVENT input."
     )
 
     def check(self, draft: ReactionDraft) -> list[RuleViolation]:
         temp = draft.conditions.temperature
-        if temp is None or temp.setpoint_celsius is None:
+        if temp is None:
             return []
-        # Treat 15-30 C as ambient.
-        if 15.0 <= temp.setpoint_celsius <= 30.0:
+        # Heating intent is determined by the *control_type*, not a numeric
+        # cutoff — that way neat/melt reactions intentionally above ambient
+        # don't trigger the rule.
+        if temp.control_type not in _HEATING_CONTROL_TYPES:
             return []
         for inp in draft.inputs:
             for comp in inp.components:
@@ -77,43 +138,54 @@ class SolventPresentBeforeHeating(Rule):
                 rule_id=self.id,
                 severity=Severity.ERROR,
                 message=(
-                    f"Reaction temperature is set ({temp.setpoint_celsius} C, "
-                    f"control_type={temp.control_type}) but no input is marked "
-                    "as SOLVENT."
+                    f"Reaction uses heating control_type={temp.control_type} "
+                    "but no input is marked as SOLVENT."
                 ),
                 fix_hint=(
-                    "Identify the solvent from the paragraph (e.g. DMF, THF, "
-                    "toluene, water) and add it as an input with reaction_role='SOLVENT'."
+                    "Identify the solvent from the paragraph (DMF, THF, toluene, "
+                    "water, etc.) and add it as an input with "
+                    "reaction_role='SOLVENT'. For neat/melt/solid-state reactions "
+                    "without a solvent, leave control_type='UNSPECIFIED' so this "
+                    "rule does not fire."
                 ),
                 path="inputs[*].components[*].reaction_role",
             )
         ]
 
 
+# Control types where stirring is the norm. REFLUX without stirring is
+# unusual but valid (simple bp distillation); microwave reactions don't
+# need stirring; photochemistry usually requires only gentle agitation.
+_REQUIRES_STIRRING_CONTROL_TYPES = {"OIL_BATH", "WATER_BATH", "HEATER"}
+
+
 class StirringBeforeHeating(Rule):
     id = "ORD-003"
-    description = "If heating is set, stirring must not be NONE."
+    description = (
+        "Heated reactions in conventional vessels (oil bath, water bath, heater) "
+        "should declare stirring; reflux and microwave reactions are allowed "
+        "to opt out."
+    )
 
     def check(self, draft: ReactionDraft) -> list[RuleViolation]:
         temp = draft.conditions.temperature
-        if temp is None or temp.setpoint_celsius is None:
-            return []
-        if temp.setpoint_celsius <= 30:
+        if temp is None or temp.control_type not in _REQUIRES_STIRRING_CONTROL_TYPES:
             return []
         stir = draft.conditions.stirring
-        if stir is None or stir.type == "NONE":
+        if stir is None or stir.type in {"NONE", "UNSPECIFIED"}:
             return [
                 RuleViolation(
                     rule_id=self.id,
                     severity=Severity.WARNING,
                     message=(
-                        f"Reaction is heated to {temp.setpoint_celsius} C but "
-                        f"stirring is {stir.type if stir else 'missing'}."
+                        f"Heated reaction (control_type={temp.control_type}) "
+                        f"with stirring={stir.type if stir else 'missing'}."
                     ),
                     fix_hint=(
-                        "Almost all heated reactions are stirred. If the paragraph "
-                        "doesn't say otherwise, set stirring.type='MAGNETIC' (or "
-                        "'OVERHEAD' for large scale)."
+                        "Almost all heated reactions in conventional vessels are "
+                        "stirred. Set stirring.type='MAGNETIC' (or 'OVERHEAD' for "
+                        "large scale) unless the paragraph explicitly says "
+                        "otherwise."
                     ),
                     path="conditions.stirring",
                 )
@@ -179,7 +251,7 @@ class WorkupOrderMonotonic(Rule):
 
 
 ORD_RULES: list[Rule] = [
-    ReagentsIntroducedBeforeUse(),
+    WorkupKeywordsDeclared(),
     SolventPresentBeforeHeating(),
     StirringBeforeHeating(),
     QuenchAfterReaction(),

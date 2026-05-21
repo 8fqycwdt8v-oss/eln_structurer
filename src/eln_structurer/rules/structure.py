@@ -87,25 +87,34 @@ class NameOrSmilesPresent(Rule):
 class AtomBalanceSanity(Rule):
     id = "STR-003"
     description = (
-        "Heavy-atom count of reactants should be >= heavy-atom count of first product."
+        "First product heavy-atom count must not exceed the sum of REACTANT "
+        "heavy atoms (matter is conserved; products can be smaller than the "
+        "sum of inputs from elimination/fragmentation, but never larger)."
     )
 
+    # REACTANTs are the main substrates; REAGENTs frequently donate atoms
+    # too (methylating agents, electrophiles, etc.). SOLVENTs typically
+    # don't contribute heavy atoms to the product — hydrolysis is a
+    # special case the LLM is expected to model by promoting water to
+    # REACTANT role.
+    _ATOM_DONOR_ROLES = {"REACTANT", "REAGENT"}
+
     def check(self, draft: ReactionDraft) -> list[RuleViolation]:
-        reactant_heavy = 0
-        any_reactant_parsed = False
+        donor_heavy = 0
+        any_parsed = False
         for inp in draft.inputs:
             for comp in inp.components:
-                if comp.reaction_role != "REACTANT":
+                if comp.reaction_role not in self._ATOM_DONOR_ROLES:
                     continue
                 smi = smiles_of(comp)
                 if not smi:
                     continue
                 ha = heavy_atoms(smi)
                 if ha is not None:
-                    reactant_heavy += ha
-                    any_reactant_parsed = True
+                    donor_heavy += ha
+                    any_parsed = True
 
-        if not any_reactant_parsed or not draft.outcomes or not draft.outcomes[0].products:
+        if not any_parsed or not draft.outcomes or not draft.outcomes[0].products:
             return []
 
         first_product = draft.outcomes[0].products[0]
@@ -116,19 +125,24 @@ class AtomBalanceSanity(Rule):
         if prod_heavy is None:
             return []
 
-        if reactant_heavy < prod_heavy:
+        # Chemically: product cannot have more heavy atoms than the sum of
+        # everything that supplied them. Fragmentation/elimination products
+        # are smaller and pass silently.
+        if prod_heavy > donor_heavy:
             return [
                 RuleViolation(
                     rule_id=self.id,
-                    severity=Severity.WARNING,
+                    severity=Severity.ERROR,
                     message=(
-                        f"Sum of REACTANT heavy atoms ({reactant_heavy}) is less than "
-                        f"heavy atoms in the first product ({prod_heavy}). "
-                        "The product is larger than its inputs."
+                        f"First product has {prod_heavy} heavy atoms but "
+                        f"REACTANT+REAGENT inputs only supply {donor_heavy}. "
+                        "Mass cannot be created."
                     ),
                     fix_hint=(
-                        "Check whether you marked a coupling partner as REAGENT "
-                        "instead of REACTANT, or whether the product SMILES is wrong."
+                        "Either an atom-donating compound was misclassified as "
+                        "SOLVENT/CATALYST, or the product SMILES is wrong. "
+                        "Hydrolysis-type reactions where water contributes atoms "
+                        "should mark water with reaction_role='REACTANT'."
                     ),
                     path="outcomes[0].products[0]",
                 )

@@ -51,7 +51,8 @@ def test_canonicalize_draft_round_trip(aspirin_draft: ReactionDraft) -> None:
     assert "salicylic acid" in canon.reactant_names
     assert any("OC(=O)c1ccccc1O".lower() in s.lower() or "O=C(O)c1ccccc1O".lower() in s.lower()
                for s in canon.reactant_smiles)
-    assert "acetic anhydride" in canon.solvent_names
+    # Acetic anhydride is the acyl donor (REAGENT), not the SOLVENT.
+    assert "acetic anhydride" in canon.reagent_names
     assert "sulfuric acid" in canon.catalyst_names
     assert canon.yield_percent == 90.0
     assert canon.temperature_celsius == 85.0
