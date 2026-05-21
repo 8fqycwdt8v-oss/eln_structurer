@@ -1,0 +1,42 @@
+[project]
+name = "eln-structurer"
+version = "0.1.0"
+description = "LLM-based structuring of unstructured chemical synthesis protocols into the Open Reaction Database (ORD) format, driven by a rule-based validation harness."
+requires-python = ">=3.11"
+readme = "README.md"
+license = { file = "LICENSE" }
+authors = [{ name = "eln_structurer contributors" }]
+dependencies = [
+    "claude-agent-sdk>=0.1.0",
+    "ord-schema>=0.3.0",
+    "rdkit>=2024.3.1",
+    "pydantic>=2.7",
+    "click>=8.1",
+    "anyio>=4.3",
+    "rich>=13.7",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.23",
+    "ruff",
+    "mypy",
+]
+# Phase-5 benchmarks (paragraph2actions, openchemie) install into their own
+# dedicated venv via a separate script — they pin ancient torch versions that
+# conflict with the core deps. See benchmarks/ when that phase lands.
+
+[project.scripts]
+eln-structurer = "eln_structurer.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/eln_structurer"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
