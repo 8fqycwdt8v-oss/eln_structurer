@@ -41,6 +41,7 @@ from eln_structurer.preprocess import normalize_paragraph
 from eln_structurer.prompts import USER_PROMPT_TEMPLATE, build_system_prompt
 from eln_structurer.tools import (
     compute_mw,
+    detect_reaction_class,
     expand_abbreviation,
     finalize_reaction,
     validate_reaction,
@@ -123,6 +124,7 @@ async def _run_primary_loop(
             finalize_reaction,
             compute_mw,
             expand_abbreviation,
+            detect_reaction_class,
         ],
     )
     options = ClaudeAgentOptions(
@@ -134,6 +136,7 @@ async def _run_primary_loop(
             "mcp__eln__finalize_reaction",
             "mcp__eln__compute_mw",
             "mcp__eln__expand_abbreviation",
+            "mcp__eln__detect_reaction_class",
         ],
         system_prompt=build_system_prompt(),
         max_turns=max_turns,

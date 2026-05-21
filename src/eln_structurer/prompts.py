@@ -207,6 +207,13 @@ then bridged to an Open Reaction Database (ORD) Reaction proto.
 5. When validation is clean, call `finalize_reaction` exactly once with the same
    draft. Then end your response.
 
+# Worked example
+
+Read this BEFORE applying the rules below. Concrete pattern recognition
+beats abstract rule recitation on the first pass.
+
+{example}
+
 # Rules of engagement
 
 - DO NOT fabricate values. If the paragraph does not specify a temperature, a
@@ -229,10 +236,6 @@ then bridged to an Open Reaction Database (ORD) Reaction proto.
 # Workup vocabulary
 
 {workup_verbs}
-
-# Worked example
-
-{example}
 
 # Allowed enum values
 

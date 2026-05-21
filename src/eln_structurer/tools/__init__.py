@@ -12,6 +12,11 @@ import them from ``eln_structurer.tools.finalize_reaction`` directly.
 """
 
 from eln_structurer.tools.compute_mw import MwResult, compute_mw, compute_mw_from_smiles
+from eln_structurer.tools.detect_reaction_class import (
+    ClassifyResult,
+    classify_from_payload,
+    detect_reaction_class,
+)
 from eln_structurer.tools.expand_abbreviation import (
     AbbreviationLookup,
     expand_abbreviation,
@@ -36,6 +41,7 @@ __all__ = [
     "finalize_reaction",
     "compute_mw",
     "expand_abbreviation",
+    "detect_reaction_class",
     # Pure core functions + result types
     "check_smiles",
     "SmilesCheck",
@@ -45,4 +51,6 @@ __all__ = [
     "MwResult",
     "lookup_abbreviation",
     "AbbreviationLookup",
+    "classify_from_payload",
+    "ClassifyResult",
 ]
