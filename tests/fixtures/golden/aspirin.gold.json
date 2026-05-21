@@ -1,0 +1,13 @@
+{
+  "reactant_names": ["salicylic acid"],
+  "reactant_smiles": ["O=C(O)c1ccccc1O"],
+  "reagent_names": ["acetic anhydride"],
+  "solvent_names": ["acetic anhydride"],
+  "catalyst_names": ["sulfuric acid"],
+  "product_names": ["acetylsalicylic acid", "aspirin"],
+  "product_smiles": ["CC(=O)Oc1ccccc1C(=O)O"],
+  "yield_percent": 90.0,
+  "temperature_celsius": 85.0,
+  "duration_minutes": 30.0,
+  "workup_verbs": ["ADDITION", "FILTRATION", "WASH", "DRY_WITH_MATERIAL"]
+}

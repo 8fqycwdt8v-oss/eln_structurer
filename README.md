@@ -139,8 +139,51 @@ src/eln_structurer/
     finalize_reaction.py
 ```
 
+## Benchmark harness (Phase 5)
+
+A pluggable benchmark framework lives under `src/eln_structurer/benchmarks/`.
+Every comparator implements a small `Adapter` interface (`is_available()` +
+`extract(paragraph) -> CanonicalReaction`) and the runner scores each prediction
+against a hand-annotated `*.gold.json` fixture on a fixed set of fields
+(reactants, reagents, solvents, catalysts, products, yield, temperature,
+duration, ordered workup verbs). Scoring is field-level precision/recall/F1
+with scalar tolerance for yield/temperature/duration.
+
+Three adapters ship today:
+
+| Adapter | Purpose | Availability |
+|---|---|---|
+| `eln_structurer` | This tool (full harness + repair loop) | requires `ANTHROPIC_API_KEY` |
+| `naive_llm` | Same model, single-shot, **no** harness — isolates the value of the rule pack | requires `ANTHROPIC_API_KEY` |
+| `paragraph2actions` | IBM RXN action-sequence model — vocabulary mapped to ORD workup types | needs separate venv (see below) |
+| `openchemie` | MIT/Coley multimodal extractor | needs separate venv (see below) |
+
+paragraph2actions and openchemie pin ancient torch versions incompatible with
+our Python 3.11 base env, so they live in their own venvs:
+
+```bash
+bash scripts/setup_bench_envs.sh paragraph2actions   # creates .venv-p2a
+bash scripts/setup_bench_envs.sh openchemie          # creates .venv-oce
+```
+
+Run the benchmark:
+
+```bash
+# All adapters that report available
+uv run eln-structurer bench --fixtures-dir tests/fixtures --out report.md
+
+# Just the comparators we care about
+uv run eln-structurer bench --adapter eln_structurer --adapter naive_llm
+```
+
+The report is Markdown with a macro-F1 table (adapter × fixture) and a
+per-field F1 table averaged across fixtures, plus a "Failures" section listing
+adapters that were unavailable or errored.
+
+Golden fixtures: `tests/fixtures/paragraphs/*.txt` + `tests/fixtures/golden/*.gold.json`
+(aspirin, Suzuki coupling, Grignard). Add new pairs by name match.
+
 ## Status
 
-Phases 1–4 of the plan implemented (skeleton, proto bridge, full rule pack,
-agent loop). Phase 5 (benchmark harness against paragraph2actions / OpenChemIE)
-is deferred.
+Phases 1–5 implemented: skeleton, proto bridge, full rule pack, agent loop,
+benchmark harness with three adapters, CI workflow.

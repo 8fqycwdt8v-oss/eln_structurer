@@ -82,5 +82,59 @@ def extract_cmd(
         click.echo(output)
 
 
+@main.command("bench")
+@click.option(
+    "--fixtures-dir",
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+    default=Path("tests/fixtures"),
+    show_default=True,
+    help="Directory containing paragraphs/*.txt and golden/*.gold.json",
+)
+@click.option(
+    "--adapter",
+    "adapter_names",
+    multiple=True,
+    default=("eln_structurer", "naive_llm", "paragraph2actions", "openchemie"),
+    show_default=True,
+    help="Adapter(s) to run. Repeat for multiple.",
+)
+@click.option(
+    "--out",
+    "out_path",
+    type=click.Path(dir_okay=False, writable=True, path_type=Path),
+    default=None,
+    help="Write the markdown report to this file (default: stdout).",
+)
+def bench_cmd(fixtures_dir: Path, adapter_names: tuple[str, ...], out_path: Path | None) -> None:
+    """Run the benchmark harness across all adapters on the golden fixture set."""
+    from eln_structurer.benchmarks.runner import (
+        discover_fixtures,
+        render_markdown_report,
+        run_benchmark_sync,
+    )
+
+    paragraphs_dir = fixtures_dir / "paragraphs"
+    gold_dir = fixtures_dir / "golden"
+    if not paragraphs_dir.is_dir() or not gold_dir.is_dir():
+        raise click.ClickException(
+            f"Expected {paragraphs_dir} and {gold_dir} to exist with fixture files."
+        )
+    cases = discover_fixtures(paragraphs_dir, gold_dir)
+    if not cases:
+        raise click.ClickException(
+            f"No fixtures found in {paragraphs_dir} (need matching *.gold.json in {gold_dir})."
+        )
+    console.print(
+        f"[cyan]Running {len(cases)} fixtures × {len(adapter_names)} adapters[/cyan]"
+    )
+    runs = run_benchmark_sync(cases, list(adapter_names))
+    report = render_markdown_report(runs)
+    if out_path:
+        out_path.write_text(report, encoding="utf-8")
+        console.print(f"[green]Wrote report to {out_path}[/green]")
+    else:
+        click.echo(report)
+
+
 if __name__ == "__main__":  # pragma: no cover
     main()

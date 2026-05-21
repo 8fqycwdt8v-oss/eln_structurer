@@ -10,11 +10,7 @@ from pydantic import ValidationError
 from eln_structurer.schema import (
     AmountModel,
     CompoundIdentifierModel,
-    CompoundModel,
-    ConditionsModel,
     ReactionDraft,
-    ReactionInputModel,
-    TemperatureModel,
     reaction_draft_json_schema,
 )
 
