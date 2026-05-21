@@ -1,6 +1,6 @@
 """Stoichiometry rules (STO-*).
 
-Uses RDKit locally (via ``compound_utils``) to compute molecular weights.
+Uses RDKit locally (via ``eln_structurer.chemistry``) to compute molecular weights.
 """
 
 from __future__ import annotations
@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from eln_structurer.rules.base import Rule, RuleViolation, Severity
-from eln_structurer.rules.compound_utils import mol_weight, smiles_of
+from eln_structurer.chemistry import mol_weight, smiles_of
 from eln_structurer.schema import (
     AmountModel,
     ReactionDraft,
@@ -313,10 +313,75 @@ class YieldRangeSanity(Rule):
         return violations
 
 
+class MassBalanceSanity(Rule):
+    """STO-006: reported product mass must not exceed the chemical maximum.
+
+    If we know the limiting reagent's moles ``n_lim`` and can compute the
+    product's molecular weight ``MW_p`` from its SMILES, then the maximum
+    isolable mass is ``n_lim * MW_p``. A 10% margin accommodates solvated /
+    hydrated isolation. Anything beyond is physically impossible.
+    """
+
+    id = "STO-006"
+    description = (
+        "Reported product mass must not exceed n_lim * MW_p * 1.1 "
+        "(theoretical maximum with a 10% solvate-inclusion margin)."
+    )
+
+    SAFETY_FACTOR = 1.10
+
+    def check(self, draft: ReactionDraft) -> list[RuleViolation]:
+        limiting_moles, _ = _identify_limiting_moles(draft)
+        if limiting_moles is None or limiting_moles <= 0:
+            return []
+        if not draft.outcomes or not draft.outcomes[0].products:
+            return []
+
+        violations: list[RuleViolation] = []
+        for pi, prod in enumerate(draft.outcomes[0].products):
+            prod_smiles = smiles_of(prod.compound)
+            if not prod_smiles:
+                continue
+            mw_p = mol_weight(prod_smiles)
+            if mw_p is None or mw_p <= 0:
+                continue
+            max_grams = limiting_moles * mw_p * self.SAFETY_FACTOR
+
+            for mi, m in enumerate(prod.measurements):
+                if m.type != "AMOUNT" or not m.units:
+                    continue
+                units = m.units.strip()
+                if units not in _MASS_TO_GRAMS:
+                    continue
+                grams = m.value * _MASS_TO_GRAMS[units]
+                if grams > max_grams:
+                    violations.append(
+                        RuleViolation(
+                            rule_id=self.id,
+                            severity=Severity.ERROR,
+                            message=(
+                                f"Reported product mass {grams:.3g} g exceeds the "
+                                f"theoretical maximum {max_grams:.3g} g "
+                                f"(n_lim={limiting_moles:.3g} mol, MW_p={mw_p:.2f}, "
+                                f"safety factor ×{self.SAFETY_FACTOR})."
+                            ),
+                            fix_hint=(
+                                "Re-check the amount — common errors: mg vs g unit "
+                                "confusion, or the wrong product SMILES."
+                            ),
+                            path=(
+                                f"outcomes[0].products[{pi}].measurements[{mi}].value"
+                            ),
+                        )
+                    )
+        return violations
+
+
 STO_RULES: list[Rule] = [
     AmountHasUnits(),
     PlausibleVolumes(),
     LimitingReagentIdentifiable(),
     EquivalentsConsistentWithLimiting(),
     YieldRangeSanity(),
+    MassBalanceSanity(),
 ]

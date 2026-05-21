@@ -6,7 +6,7 @@ All checks here are local: RDKit only, no network calls.
 from __future__ import annotations
 
 from eln_structurer.rules.base import Rule, RuleViolation, Severity
-from eln_structurer.rules.compound_utils import (
+from eln_structurer.chemistry import (
     has_name_or_smiles,
     heavy_atoms,
     parse_mol,

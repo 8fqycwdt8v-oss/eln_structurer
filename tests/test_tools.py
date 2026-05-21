@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import asyncio
 
-from eln_structurer.rules.compound_utils import smiles_of
+from eln_structurer.chemistry import smiles_of
 from eln_structurer.schema import (
     CompoundIdentifierModel,
     CompoundModel,

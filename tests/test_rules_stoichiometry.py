@@ -7,6 +7,7 @@ from pydantic import ValidationError
 
 from eln_structurer.rules.stoichiometry import (
     LimitingReagentIdentifiable,
+    MassBalanceSanity,
     PlausibleVolumes,
     YieldRangeSanity,
 )
@@ -118,3 +119,18 @@ def test_yield_range_errors_on_impossible() -> None:
 def test_yield_range_warns_on_borderline() -> None:
     violations = YieldRangeSanity().check(_draft_with_yield(103.5))
     assert "STO-005" in _ids(violations)
+
+
+def test_mass_balance_passes_for_realistic_aspirin(aspirin_draft: ReactionDraft) -> None:
+    # n_lim = 10 mmol; MW_aspirin = 180.16 g/mol -> max ≈ 1.98 g.
+    # Fixture reports 1.62 g — comfortably below the ceiling.
+    assert MassBalanceSanity().check(aspirin_draft) == []
+
+
+def test_mass_balance_errors_on_impossible_yield(aspirin_draft: ReactionDraft) -> None:
+    # Bump reported product AMOUNT to 5 g; theoretical max is ~1.98 g.
+    aspirin_draft.outcomes[0].products[0].measurements[1] = ProductMeasurementModel(
+        type="AMOUNT", value=5.0, units="g"
+    )
+    violations = MassBalanceSanity().check(aspirin_draft)
+    assert "STO-006" in _ids(violations)

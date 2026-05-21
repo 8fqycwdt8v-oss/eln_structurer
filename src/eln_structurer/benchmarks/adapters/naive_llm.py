@@ -24,6 +24,7 @@ from eln_structurer.benchmarks.adapters.base import (
     anthropic_key_available,
 )
 from eln_structurer.benchmarks.canonical import CanonicalReaction
+from eln_structurer.prompts import WORKUP_VERB_REFERENCE
 
 
 _SCHEMA_HINT = """\
@@ -60,10 +61,9 @@ Field semantics:
 - yield_percent: numeric % yield if stated.
 - temperature_celsius: the main reaction temperature (not workup); use 25 for rt.
 - duration_minutes: total reaction time in minutes.
-- workup_verbs: ordered, uppercase ORD workup types from this list:
-  ADDITION, WASH, DRY_WITH_MATERIAL, EXTRACTION, FILTRATION, CONCENTRATION,
-  PH_ADJUST, DISSOLUTION, TEMPERATURE, STIRRING, WAIT, DISTILLATION,
-  FLASH_CHROMATOGRAPHY, CUSTOM.
+- workup_verbs: ordered uppercase ORD workup types — see the vocabulary below.
+
+{WORKUP_VERB_REFERENCE}
 
 If a field is not stated in the paragraph, use null (scalars) or an empty list.
 Do not invent SMILES; if uncertain, leave reactant_smiles / product_smiles empty.

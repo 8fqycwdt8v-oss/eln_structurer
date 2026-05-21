@@ -1,11 +1,13 @@
-"""Shared helpers for reading and validating compound data.
+"""Local chemistry primitives shared across rules, tools, and benchmarks.
 
-Centralizes:
-- Identifier lookup (NAME / SMILES) on a CompoundModel
-- Cached RDKit parsing — the same SMILES often gets read by 3–4 rules in a
-  single `run_harness` pass; caching turns the repeat parses into dict lookups.
+Provides:
+- Identifier lookup (NAME / SMILES) on a ``CompoundModel``.
+- RDKit parsing wrapped in an LRU cache; the same SMILES is read by several
+  rules per ``run_harness`` pass and by the validate_smiles tool, so caching
+  turns repeats into dict lookups.
 
-Keep this module free of network access; it only wraps local libraries.
+This module is the only place in the codebase that touches RDKit directly
+for compound work. Network access is forbidden: it stays purely local.
 """
 
 from __future__ import annotations

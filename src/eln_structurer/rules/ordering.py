@@ -222,6 +222,121 @@ class QuenchAfterReaction(Rule):
         return violations
 
 
+# Reagents that decompose or ignite on contact with O2 or moisture. Match
+# is substring/case-insensitive on the NAME identifier. The list is
+# intentionally narrow — we want zero false positives.
+_AIR_SENSITIVE_NAME_PATTERNS = [
+    "grignard",
+    "n-buli", "nbuli", "n-butyllithium", "butyllithium",
+    "s-buli", "sec-buli", "sec-butyllithium",
+    "t-buli", "tert-buli", "tert-butyllithium",
+    "phenyllithium", "phli",
+    "methyllithium", "meli",
+    "lda", "lithium diisopropylamide",
+    "lihmds", "lithium hexamethyldisilazide",
+    "nahmds", "sodium hexamethyldisilazide",
+    "khmds", "potassium hexamethyldisilazide",
+    "sodium hydride", "nah",
+    "potassium hydride", "kh",
+    "diethylzinc",
+    "trimethylaluminum", "triethylaluminum",
+    "dibal", "diisobutylaluminum hydride",
+]
+
+_INERT_ATMOSPHERES = {"nitrogen", "argon", "n2", "ar", "inert"}
+
+
+def _looks_air_sensitive(name: str) -> str | None:
+    """Return the matched pattern if ``name`` suggests air sensitivity."""
+    n = name.strip().lower()
+    for pat in _AIR_SENSITIVE_NAME_PATTERNS:
+        if pat in n:
+            return pat
+    return None
+
+
+def _looks_like_grignard_setup(draft: ReactionDraft) -> bool:
+    """Heuristic: an input named 'magnesium' (turnings, dust, etc.) plus an
+    alkyl/aryl halide suggests an in-situ Grignard formation."""
+    has_mg = False
+    has_halide = False
+    for inp in draft.inputs:
+        for comp in inp.components:
+            for ident in comp.identifiers:
+                if ident.type not in {"NAME", "IUPAC_NAME"}:
+                    continue
+                lower = ident.value.lower()
+                if "magnesium" in lower:
+                    has_mg = True
+                if "bromo" in lower or "iodo" in lower or "chloro" in lower:
+                    has_halide = True
+    return has_mg and has_halide
+
+
+class InertAtmosphereForSensitiveReagents(Rule):
+    """ORD-006: air- and moisture-sensitive reagents require inert atmosphere.
+
+    Fires when an input compound NAME matches a known sensitive reagent
+    (Grignards, organolithiums, hydride bases, dialkylzincs, ...) OR the
+    input set looks like an in-situ Grignard formation (Mg + alkyl halide),
+    AND ``conditions.atmosphere`` is missing or not inert.
+    """
+
+    id = "ORD-006"
+    description = (
+        "Air/moisture-sensitive reagents (organolithiums, Grignards, NaH, "
+        "LDA, …) require conditions.atmosphere set to nitrogen or argon."
+    )
+
+    def check(self, draft: ReactionDraft) -> list[RuleViolation]:
+        sensitive_hits: list[tuple[int, int, str]] = []
+        for i, inp in enumerate(draft.inputs):
+            for j, comp in enumerate(inp.components):
+                for ident in comp.identifiers:
+                    if ident.type not in {"NAME", "IUPAC_NAME"}:
+                        continue
+                    pat = _looks_air_sensitive(ident.value)
+                    if pat is not None:
+                        sensitive_hits.append((i, j, pat))
+                        break
+
+        if not sensitive_hits and not _looks_like_grignard_setup(draft):
+            return []
+
+        atmosphere = (draft.conditions.atmosphere or "").strip().lower()
+        if atmosphere in _INERT_ATMOSPHERES:
+            return []
+
+        if sensitive_hits:
+            example = sensitive_hits[0]
+            msg = (
+                f"Input[{example[0]}].components[{example[1]}] is "
+                f"{example[2]!r}, which is air/moisture sensitive, but "
+                "conditions.atmosphere is "
+                f"{draft.conditions.atmosphere!r}."
+            )
+        else:
+            msg = (
+                "Input set looks like an in-situ Grignard formation "
+                "(magnesium + alkyl/aryl halide) but conditions.atmosphere "
+                f"is {draft.conditions.atmosphere!r}."
+            )
+
+        return [
+            RuleViolation(
+                rule_id=self.id,
+                severity=Severity.ERROR,
+                message=msg,
+                fix_hint=(
+                    "Set conditions.atmosphere to 'nitrogen' or 'argon' "
+                    "(the paragraph almost certainly says so — look for "
+                    "'under N2', 'under argon', 'flame-dried', or 'inert')."
+                ),
+                path="conditions.atmosphere",
+            )
+        ]
+
+
 class WorkupOrderMonotonic(Rule):
     id = "ORD-005"
     description = "Workup order field should be monotonically increasing."
@@ -256,4 +371,5 @@ ORD_RULES: list[Rule] = [
     StirringBeforeHeating(),
     QuenchAfterReaction(),
     WorkupOrderMonotonic(),
+    InertAtmosphereForSensitiveReagents(),
 ]

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from eln_structurer.rules.ordering import (
+    InertAtmosphereForSensitiveReagents,
     QuenchAfterReaction,
     SolventPresentBeforeHeating,
     StirringBeforeHeating,
@@ -10,13 +11,57 @@ from eln_structurer.rules.ordering import (
     WorkupOrderMonotonic,
 )
 from eln_structurer.schema import (
+    AmountModel,
     CompoundIdentifierModel,
     CompoundModel,
+    ConditionsModel,
+    ReactionDraft,
+    ReactionInputModel,
     StirringModel,
     TemperatureModel,
     WorkupModel,
 )
 from tests.conftest import rule_ids as _ids
+
+
+def _grignard_draft(atmosphere: str | None) -> ReactionDraft:
+    """Minimal Mg + PhBr Grignard setup with a configurable atmosphere."""
+    return ReactionDraft(
+        identifiers=[],
+        inputs=[
+            ReactionInputModel(
+                name="mg_turnings",
+                components=[
+                    CompoundModel(
+                        identifiers=[CompoundIdentifierModel(type="NAME", value="magnesium")],
+                        amount=AmountModel(value=20.0, units="mmol"),
+                        reaction_role="REACTANT",
+                    )
+                ],
+            ),
+            ReactionInputModel(
+                name="bromobenzene",
+                components=[
+                    CompoundModel(
+                        identifiers=[
+                            CompoundIdentifierModel(type="NAME", value="bromobenzene"),
+                            CompoundIdentifierModel(type="SMILES", value="Brc1ccccc1"),
+                        ],
+                        amount=AmountModel(value=20.0, units="mmol"),
+                        reaction_role="REACTANT",
+                        is_limiting=True,
+                    )
+                ],
+            ),
+        ],
+        conditions=ConditionsModel(
+            temperature=TemperatureModel(setpoint_celsius=66.0, control_type="REFLUX"),
+            stirring=StirringModel(type="MAGNETIC"),
+            atmosphere=atmosphere,
+        ),
+        notes="Grignard formation",
+        source_paragraph="...",
+    )
 
 
 def test_solvent_required_when_heating(aspirin_draft) -> None:
@@ -111,6 +156,64 @@ def test_workup_monotonic_warns_on_decrease(aspirin_draft) -> None:
     )
     violations = WorkupOrderMonotonic().check(aspirin_draft)
     assert "ORD-005" in _ids(violations)
+
+
+def test_inert_atmosphere_passes_when_argon() -> None:
+    violations = InertAtmosphereForSensitiveReagents().check(_grignard_draft("argon"))
+    assert violations == []
+
+
+def test_inert_atmosphere_passes_when_nitrogen() -> None:
+    violations = InertAtmosphereForSensitiveReagents().check(_grignard_draft("nitrogen"))
+    assert violations == []
+
+
+def test_inert_atmosphere_fires_on_grignard_without_atmosphere() -> None:
+    violations = InertAtmosphereForSensitiveReagents().check(_grignard_draft(None))
+    assert "ORD-006" in _ids(violations)
+
+
+def test_inert_atmosphere_fires_on_grignard_with_air() -> None:
+    violations = InertAtmosphereForSensitiveReagents().check(_grignard_draft("air"))
+    assert "ORD-006" in _ids(violations)
+
+
+def test_inert_atmosphere_fires_for_buli_named_reagent() -> None:
+    """Even without the Mg+halide heuristic, a named n-BuLi triggers the rule."""
+    draft = ReactionDraft(
+        identifiers=[],
+        inputs=[
+            ReactionInputModel(
+                name="base",
+                components=[
+                    CompoundModel(
+                        identifiers=[CompoundIdentifierModel(type="NAME", value="n-BuLi")],
+                        amount=AmountModel(value=1.0, units="mmol"),
+                        reaction_role="REAGENT",
+                    )
+                ],
+            ),
+            ReactionInputModel(
+                name="substrate",
+                components=[
+                    CompoundModel(
+                        identifiers=[CompoundIdentifierModel(type="NAME", value="substrate")],
+                        amount=AmountModel(value=1.0, units="mmol"),
+                        reaction_role="REACTANT",
+                        is_limiting=True,
+                    )
+                ],
+            ),
+        ],
+        conditions=ConditionsModel(
+            temperature=TemperatureModel(setpoint_celsius=-78.0, control_type="DRY_ICE"),
+            atmosphere=None,
+        ),
+        notes="cold deprotonation",
+        source_paragraph="...",
+    )
+    violations = InertAtmosphereForSensitiveReagents().check(draft)
+    assert "ORD-006" in _ids(violations)
 
 
 def test_quench_order_must_be_positive() -> None:

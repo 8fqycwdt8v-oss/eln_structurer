@@ -40,6 +40,190 @@ def test_serialize_rejects_unknown_format(aspirin_draft: ReactionDraft) -> None:
         serialize_reaction(reaction_pb, fmt="csv")
 
 
+def test_apply_amount_equiv_records_feature() -> None:
+    """A Compound with units='equiv' should encode equivalents in features
+    and mark the amount as UnmeasuredAmount.CUSTOM."""
+    from eln_structurer.schema import (
+        AmountModel,
+        CompoundIdentifierModel,
+        CompoundModel,
+        ConditionsModel,
+        OutcomeModel,
+        ProductModel,
+        ReactionInputModel,
+        TemperatureModel,
+    )
+    from ord_schema.proto import reaction_pb2
+
+    draft = ReactionDraft(
+        identifiers=[],
+        inputs=[
+            ReactionInputModel(
+                name="r",
+                components=[
+                    CompoundModel(
+                        identifiers=[CompoundIdentifierModel(type="NAME", value="A")],
+                        amount=AmountModel(value=1.5, units="equiv"),
+                        reaction_role="REAGENT",
+                    )
+                ],
+            ),
+            ReactionInputModel(
+                name="lim",
+                components=[
+                    CompoundModel(
+                        identifiers=[CompoundIdentifierModel(type="NAME", value="L")],
+                        amount=AmountModel(value=1.0, units="mmol"),
+                        reaction_role="REACTANT",
+                        is_limiting=True,
+                    )
+                ],
+            ),
+        ],
+        conditions=ConditionsModel(temperature=TemperatureModel(control_type="AMBIENT")),
+        outcomes=[
+            OutcomeModel(
+                products=[
+                    ProductModel(
+                        compound=CompoundModel(
+                            identifiers=[CompoundIdentifierModel(type="NAME", value="P")],
+                            reaction_role="PRODUCT",
+                        )
+                    )
+                ]
+            )
+        ],
+        notes="n",
+        source_paragraph="p",
+    )
+    proto = draft_to_proto(draft)
+    comp = proto.inputs["r"].components[0]
+    assert comp.features["equivalents"].float_value == 1.5
+    assert comp.amount.unmeasured.type == reaction_pb2.UnmeasuredAmount.CUSTOM
+    assert "1.5" in comp.amount.unmeasured.details
+
+
+def test_apply_amount_mass_pct_uses_unmeasured() -> None:
+    """A Compound with units='mass_pct' should land in unmeasured with details."""
+    from eln_structurer.schema import (
+        AmountModel,
+        CompoundIdentifierModel,
+        CompoundModel,
+        ConditionsModel,
+        OutcomeModel,
+        ProductModel,
+        ReactionInputModel,
+        TemperatureModel,
+    )
+    from ord_schema.proto import reaction_pb2
+
+    draft = ReactionDraft(
+        identifiers=[],
+        inputs=[
+            ReactionInputModel(
+                name="r",
+                components=[
+                    CompoundModel(
+                        identifiers=[CompoundIdentifierModel(type="NAME", value="catalyst")],
+                        amount=AmountModel(value=5.0, units="mass_pct"),
+                        reaction_role="CATALYST",
+                    )
+                ],
+            ),
+            ReactionInputModel(
+                name="lim",
+                components=[
+                    CompoundModel(
+                        identifiers=[CompoundIdentifierModel(type="NAME", value="L")],
+                        amount=AmountModel(value=1.0, units="mmol"),
+                        reaction_role="REACTANT",
+                        is_limiting=True,
+                    )
+                ],
+            ),
+        ],
+        conditions=ConditionsModel(temperature=TemperatureModel(control_type="AMBIENT")),
+        outcomes=[
+            OutcomeModel(
+                products=[
+                    ProductModel(
+                        compound=CompoundModel(
+                            identifiers=[CompoundIdentifierModel(type="NAME", value="P")],
+                            reaction_role="PRODUCT",
+                        )
+                    )
+                ]
+            )
+        ],
+        notes="n",
+        source_paragraph="p",
+    )
+    proto = draft_to_proto(draft)
+    comp = proto.inputs["r"].components[0]
+    assert comp.amount.unmeasured.type == reaction_pb2.UnmeasuredAmount.CUSTOM
+    assert "mass_pct" in comp.amount.unmeasured.details
+
+
+def test_apply_amount_missing_amount_for_catalyst() -> None:
+    """A CATALYST with amount=None should encode as UnmeasuredAmount.CATALYTIC."""
+    from eln_structurer.schema import (
+        CompoundIdentifierModel,
+        CompoundModel,
+        ConditionsModel,
+        OutcomeModel,
+        ProductModel,
+        ReactionInputModel,
+        TemperatureModel,
+        AmountModel,
+    )
+    from ord_schema.proto import reaction_pb2
+
+    draft = ReactionDraft(
+        identifiers=[],
+        inputs=[
+            ReactionInputModel(
+                name="cat",
+                components=[
+                    CompoundModel(
+                        identifiers=[CompoundIdentifierModel(type="NAME", value="H2SO4")],
+                        amount=None,
+                        reaction_role="CATALYST",
+                    )
+                ],
+            ),
+            ReactionInputModel(
+                name="r",
+                components=[
+                    CompoundModel(
+                        identifiers=[CompoundIdentifierModel(type="NAME", value="L")],
+                        amount=AmountModel(value=1, units="mmol"),
+                        reaction_role="REACTANT",
+                        is_limiting=True,
+                    )
+                ],
+            ),
+        ],
+        conditions=ConditionsModel(temperature=TemperatureModel(control_type="AMBIENT")),
+        outcomes=[
+            OutcomeModel(
+                products=[
+                    ProductModel(
+                        compound=CompoundModel(
+                            identifiers=[CompoundIdentifierModel(type="NAME", value="P")],
+                            reaction_role="PRODUCT",
+                        )
+                    )
+                ]
+            )
+        ],
+        notes="n",
+        source_paragraph="p",
+    )
+    proto = draft_to_proto(draft)
+    cat = proto.inputs["cat"].components[0]
+    assert cat.amount.unmeasured.type == reaction_pb2.UnmeasuredAmount.CATALYTIC
+
+
 def test_duplicate_input_names_get_suffixed() -> None:
     from eln_structurer.schema import (
         AmountModel,

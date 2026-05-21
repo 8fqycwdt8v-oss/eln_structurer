@@ -32,7 +32,7 @@ def normalize_smiles(smiles: str) -> str:
     """Canonicalize a SMILES via RDKit; returns input on parse failure."""
     if not smiles:
         return ""
-    from eln_structurer.rules.compound_utils import canonical_smiles
+    from eln_structurer.chemistry import canonical_smiles
 
     return canonical_smiles(smiles) or smiles
 
