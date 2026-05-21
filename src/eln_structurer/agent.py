@@ -1,11 +1,11 @@
 """Agent SDK wiring: drives Claude through the draft → validate → repair loop.
 
-The pipeline is:
+Pipeline:
 
     paragraph
        │
        ▼
-    normalize → build system prompt
+    normalize (preprocess.py) → build system prompt
        │
        ▼
     Primary agent loop  (ClaudeSDKClient + 5 MCP tools)
@@ -16,10 +16,11 @@ The pipeline is:
        │  reads the original paragraph + the finalized JSON,
        │  emits structured findings.
        ▼
-    [if critic found errors] one more primary-agent round
+    [if critic found ERRORs] one more primary-agent round
        with critic feedback prepended to the user prompt.
+       │
        ▼
-    return ExtractResult
+    return ExtractResult (carries metrics for downstream observability)
 """
 
 from __future__ import annotations
@@ -52,11 +53,12 @@ from eln_structurer.tools.finalize_reaction import (
 )
 
 
-# Default model is Sonnet 4.6 — Sonnet's quality is close to Opus on this
-# task at a fraction of the cost. Users wanting maximum quality pass
-# ``--quality`` (CLI) or model="claude-opus-4-7" (programmatic).
 DEFAULT_MODEL = "claude-sonnet-4-6"
 HIGH_QUALITY_MODEL = "claude-opus-4-7"
+
+# Hard cap on paragraph length — beyond this we refuse to call the LLM at
+# all rather than blow the prompt window on garbage. Roughly 4k tokens.
+MAX_PARAGRAPH_CHARS = 16_000
 
 
 @dataclass
@@ -68,26 +70,29 @@ class ExtractResult:
     transcript: list[str]
     critic_findings: list[dict] = field(default_factory=list)
     failure_summary: dict[str, Any] = field(default_factory=dict)
+    # Observability — populated even on success so callers can track cost
+    # and convergence:
+    iterations: int = 0
+    rule_history: dict[str, int] = field(default_factory=dict)
+    critic_ran: bool = False
+    revision_triggered: bool = False
 
 
 def _build_failure_summary(
-    slot: FinalizedReaction, critic: CriticReport | None
+    slot: FinalizedReaction, critic: CriticReport | None, reason: str
 ) -> dict[str, Any]:
     summary: dict[str, Any] = {
+        "reason": reason,
         "iterations": slot.iterations,
         "rule_history": dict(slot.rule_history),
         "last_validation_summary": slot.validation_summary,
-        "explanation": (
-            "Agent did not converge to a clean draft within the iteration "
-            "budget. The most-frequent rule failures and the last validation "
-            "report are included so you can intervene manually."
-        ),
     }
     if critic is not None:
         summary["critic_findings"] = [
             {"path": f.path, "severity": f.severity, "message": f.message}
             for f in critic.findings
         ]
+        summary["critic_parse_error"] = critic.parse_error
     return summary
 
 
@@ -150,17 +155,32 @@ async def extract(
     debug: bool = False,
     enable_critic: bool = True,
 ) -> ExtractResult:
-    """Run the agent against a single paragraph, returning the finalized output.
+    """Run the agent against a single paragraph, returning the finalized output."""
+    if len(paragraph) > MAX_PARAGRAPH_CHARS:
+        return ExtractResult(
+            success=False,
+            pbtxt="",
+            json_text="",
+            validation_summary={},
+            transcript=[],
+            failure_summary={
+                "reason": "paragraph too large",
+                "size_chars": len(paragraph),
+                "limit_chars": MAX_PARAGRAPH_CHARS,
+                "explanation": (
+                    "Paragraph exceeds the input size cap. The schema is "
+                    "single-reaction; multi-step or multi-page procedures "
+                    "should be split before extraction."
+                ),
+            },
+        )
 
-    With ``enable_critic=True`` (default) a fresh critic LLM call follows
-    a successful primary pass; if the critic finds issues, one extra
-    primary-agent round runs with the critic's feedback included.
-    """
     normalization = normalize_paragraph(paragraph)
     finalized = FinalizedReaction()
     token = bind_finalized_slot(finalized)
     transcript: list[str] = []
     critic_report: CriticReport | None = None
+    revision_triggered = False
 
     try:
         user_prompt = USER_PROMPT_TEMPLATE.format(paragraph=normalization.normalized)
@@ -172,8 +192,6 @@ async def extract(
             transcript=transcript,
         )
 
-        # If the primary loop produced a clean output and the critic is
-        # available, run a single review pass.
         if (
             finalized.pbtxt
             and enable_critic
@@ -184,16 +202,22 @@ async def extract(
                 draft_json=finalized.json_text,
                 model=model,
             )
-            # If the critic flagged ERRORs, run one more primary round with
-            # the findings prepended to the original prompt.
             if not critic_report.is_clean and any(
                 f.severity == "ERROR" for f in critic_report.findings
             ):
-                # Reset finalized state for the revision round; if the
-                # revision fails we'll know it via slot.pbtxt being empty.
+                # Snapshot pre-revision state so we can roll back cleanly
+                # if the revision fails to finalize. Also clear the
+                # rule_history so the divergence counter measures only the
+                # revision round, not the cumulative loop.
+                revision_triggered = True
                 prior_pbtxt = finalized.pbtxt
+                prior_json = finalized.json_text
+                prior_validation = finalized.validation_summary
+                prior_history = dict(finalized.rule_history)
                 finalized.pbtxt = ""
                 finalized.json_text = ""
+                finalized.rule_history.clear()
+
                 revision_prompt = (
                     critic_report.as_repair_prompt()
                     + "\n\n"
@@ -206,20 +230,15 @@ async def extract(
                     debug=debug,
                     transcript=transcript,
                 )
-                # If the revision didn't produce a finalized output, fall
-                # back to the pre-critic output so we don't silently lose
-                # a valid extraction.
+                # If the revision round didn't finalize, restore the
+                # pre-critic clean state (and its rule_history) so the
+                # returned result is internally consistent.
                 if not finalized.pbtxt:
                     finalized.pbtxt = prior_pbtxt
-                    # json_text was cleared too; the slot already has a
-                    # validation_summary, so just refill the JSON below.
-                    from eln_structurer.proto_bridge import (
-                        draft_to_proto,
-                        serialize_reaction,
-                    )
-                    if finalized.draft is not None:
-                        proto = draft_to_proto(finalized.draft)
-                        finalized.json_text = serialize_reaction(proto, fmt="json")
+                    finalized.json_text = prior_json
+                    finalized.validation_summary = prior_validation
+                    finalized.rule_history.clear()
+                    finalized.rule_history.update(prior_history)
     finally:
         unbind_finalized_slot(token)
 
@@ -231,5 +250,20 @@ async def extract(
         validation_summary=finalized.validation_summary,
         transcript=transcript,
         critic_findings=_critic_findings_dicts(critic_report),
-        failure_summary={} if success else _build_failure_summary(finalized, critic_report),
+        iterations=finalized.iterations,
+        rule_history=dict(finalized.rule_history),
+        critic_ran=critic_report is not None,
+        revision_triggered=revision_triggered,
+        failure_summary=(
+            {}
+            if success
+            else _build_failure_summary(
+                finalized,
+                critic_report,
+                reason=(
+                    "agent did not finalize a draft within the iteration "
+                    "budget; see rule_history for the most-frequent failures"
+                ),
+            )
+        ),
     )

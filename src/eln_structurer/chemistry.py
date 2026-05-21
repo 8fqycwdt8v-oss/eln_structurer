@@ -46,10 +46,19 @@ def has_name_or_smiles(comp: CompoundModel) -> bool:
 
 @lru_cache(maxsize=2048)
 def parse_mol(smiles: str) -> Mol | None:
-    """RDKit MolFromSmiles, cached. Returns None for unparseable input."""
+    """RDKit MolFromSmiles, cached. Returns None for unparseable input.
+
+    Catches every exception RDKit can raise — segfaults aside, malformed
+    SMILES can also raise ValueError, RuntimeError, or OverflowError on
+    very large strings. Returning None here keeps the agent loop alive
+    instead of letting an adversarial input crash the entire extraction.
+    """
     if not smiles:
         return None
-    return Chem.MolFromSmiles(smiles)
+    try:
+        return Chem.MolFromSmiles(smiles)
+    except Exception:  # noqa: BLE001 — defensive, see docstring
+        return None
 
 
 def heavy_atoms(smiles: str) -> int | None:

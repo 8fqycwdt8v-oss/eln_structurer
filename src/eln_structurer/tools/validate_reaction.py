@@ -31,6 +31,13 @@ from eln_structurer.tools.finalize_reaction import (
 # a stronger nudge in the repair prompt.
 _DIVERGENCE_THRESHOLD = 3
 
+# The agent runs with max_turns = max_iters * 3 ≈ 15. validate_reaction
+# costs one turn, agent reasoning costs another, fix costs a third, so the
+# effective iteration budget is ~5. We tell the agent its remaining budget
+# via the tool result so it can self-limit instead of looping until the
+# SDK hard-caps it. ITER_BUDGET is the soft cap we communicate.
+_DEFAULT_ITER_BUDGET = 5
+
 
 @dataclass(frozen=True)
 class DraftValidation:
@@ -117,6 +124,30 @@ async def validate_reaction(args: dict[str, Any]) -> dict[str, Any]:
                 slot.rule_history[v.rule_id] += 1
 
     text = report.as_repair_prompt()
+    if slot is not None:
+        # Tell the agent how much of the iteration budget it has used so it
+        # can self-limit instead of looping silently until the SDK caps it.
+        used = slot.iterations
+        remaining = max(0, _DEFAULT_ITER_BUDGET - used)
+        if not report.is_clean:
+            if remaining == 0:
+                text += (
+                    "\n\n!!! BUDGET EXHAUSTED: This was iteration "
+                    f"{used}/{_DEFAULT_ITER_BUDGET}. Do NOT call "
+                    "validate_reaction again — explain in plain text which "
+                    "errors remain and why they cannot be satisfied from "
+                    "the paragraph alone, then stop. Do not call "
+                    "finalize_reaction with an unclean draft."
+                )
+            elif remaining <= 2:
+                text += (
+                    f"\n\n[BUDGET WARNING: iteration {used} of "
+                    f"{_DEFAULT_ITER_BUDGET}; only {remaining} more "
+                    "validate→fix cycles before the agent must stop.]"
+                )
+            else:
+                text += f"\n\n[iteration {used} of {_DEFAULT_ITER_BUDGET}]"
+
     if (
         slot is not None
         and not report.is_clean

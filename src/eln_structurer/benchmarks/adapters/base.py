@@ -29,6 +29,13 @@ class AdapterResult:
     prediction: CanonicalReaction | None
     error: str | None
     elapsed_seconds: float
+    # Optional observability fields populated by adapters that drive a
+    # tool-using agent loop (eln_structurer). Defaults make
+    # naive_llm-style single-shot adapters work unchanged.
+    iterations: int = 0
+    critic_ran: bool = False
+    revision_triggered: bool = False
+    rule_history: dict[str, int] | None = None
 
 
 class Adapter(ABC):

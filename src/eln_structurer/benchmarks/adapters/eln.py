@@ -20,6 +20,11 @@ class ElnStructurerAdapter(Adapter):
     def __init__(self, *, model: str = DEFAULT_MODEL, max_iters: int = 5) -> None:
         self.model = model
         self.max_iters = max_iters
+        # Last-call telemetry, exposed for the benchmark runner to harvest.
+        self._last_iterations: int = 0
+        self._last_critic_ran: bool = False
+        self._last_revision_triggered: bool = False
+        self._last_rule_history: dict[str, int] = {}
 
     async def is_available(self) -> bool:
         return anthropic_key_available()
@@ -30,6 +35,11 @@ class ElnStructurerAdapter(Adapter):
         )
         if not result.success:
             raise AdapterError(
-                f"eln_structurer failed to converge: {result.validation_summary}"
+                f"eln_structurer failed to converge: {result.failure_summary}"
             )
+        # Stash observability fields where run_adapter can pick them up.
+        self._last_iterations = result.iterations
+        self._last_critic_ran = result.critic_ran
+        self._last_revision_triggered = result.revision_triggered
+        self._last_rule_history = dict(result.rule_history)
         return canonicalize_ord_json(result.json_text)

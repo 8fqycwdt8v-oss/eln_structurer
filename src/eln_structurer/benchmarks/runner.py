@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from eln_structurer.benchmarks.adapters import REGISTRY, AdapterResult
@@ -36,6 +36,10 @@ class CaseRun:
     elapsed_seconds: float
     macro_f1: float | None
     field_scores: list[FieldScore]
+    iterations: int = 0
+    critic_ran: bool = False
+    revision_triggered: bool = False
+    rule_history: dict[str, int] = field(default_factory=dict)
 
 
 def _failure_run(
@@ -80,6 +84,10 @@ async def run_adapter(adapter: Adapter, paragraph: str) -> AdapterResult:
             prediction=prediction,
             error=None,
             elapsed_seconds=time.monotonic() - start,
+            iterations=getattr(adapter, "_last_iterations", 0),
+            critic_ran=getattr(adapter, "_last_critic_ran", False),
+            revision_triggered=getattr(adapter, "_last_revision_triggered", False),
+            rule_history=getattr(adapter, "_last_rule_history", None),
         )
     except AdapterUnavailable as exc:
         return AdapterResult(
@@ -140,6 +148,10 @@ async def run_benchmark(
                         elapsed_seconds=result.elapsed_seconds,
                         macro_f1=macro_f1(field_scores),
                         field_scores=field_scores,
+                        iterations=result.iterations,
+                        critic_ran=result.critic_ran,
+                        revision_triggered=result.revision_triggered,
+                        rule_history=dict(result.rule_history or {}),
                     )
                 )
             else:
@@ -204,6 +216,29 @@ def render_markdown_report(runs: list[CaseRun]) -> str:
             f1s = [x for x in f1s if x is not None]
             cells.append(f"{sum(f1s) / len(f1s):.2f}" if f1s else "—")
         lines.append(f"| {adapter} | " + " | ".join(cells) + " |")
+
+    # Loop telemetry — only meaningful for tool-using adapters.
+    telemetry_rows = [r for r in runs if r.success and r.iterations > 0]
+    if telemetry_rows:
+        lines.extend(["", "## Loop telemetry (successful runs)", ""])
+        lines.append(
+            "| adapter | fixture | iterations | critic_ran | "
+            "revision_triggered | top rule fired |"
+        )
+        lines.append("|" + "---|" * 6)
+        for r in telemetry_rows:
+            top_rule = "—"
+            if r.rule_history:
+                top_rule_id, top_rule_count = max(
+                    r.rule_history.items(), key=lambda kv: kv[1]
+                )
+                top_rule = f"{top_rule_id} (×{top_rule_count})"
+            lines.append(
+                f"| {r.adapter} | {r.fixture} | {r.iterations} | "
+                f"{'yes' if r.critic_ran else 'no'} | "
+                f"{'yes' if r.revision_triggered else 'no'} | "
+                f"{top_rule} |"
+            )
 
     lines.extend(["", "## Failures", ""])
     failed = [r for r in runs if not r.success]
