@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from eln_structurer.rules.base import Rule, RuleViolation, Severity
 from eln_structurer.chemistry import (
+    canonical_smiles,
     has_name_or_smiles,
     heavy_atoms,
     parse_mol,
@@ -150,4 +151,76 @@ class AtomBalanceSanity(Rule):
         return []
 
 
-STR_RULES: list[Rule] = [SmilesParses(), NameOrSmilesPresent(), AtomBalanceSanity()]
+def _all_compounds(draft: ReactionDraft):
+    """Yield every CompoundModel in the draft with its location path."""
+    for i, inp in enumerate(draft.inputs):
+        for j, comp in enumerate(inp.components):
+            yield comp, f"inputs[{i}].components[{j}]"
+    for oi, outcome in enumerate(draft.outcomes):
+        for pi, prod in enumerate(outcome.products):
+            yield prod.compound, f"outcomes[{oi}].products[{pi}].compound"
+    for wi, wu in enumerate(draft.workups):
+        for j, comp in enumerate(wu.components):
+            yield comp, f"workups[{wi}].components[{j}]"
+
+
+class SmilesIdentifiersAreConsistent(Rule):
+    """STR-004: when a compound has multiple SMILES identifiers, they must
+    canonicalize to the same molecule.
+
+    Two SMILES on one compound is legitimate (Kekulé vs aromatic, atom-
+    order variations). What's not legitimate is two SMILES that name
+    different molecules — that indicates the agent merged data from two
+    different compounds onto one record.
+    """
+
+    id = "STR-004"
+    description = (
+        "Multiple SMILES identifiers on the same compound must canonicalize "
+        "to the same molecule."
+    )
+
+    def check(self, draft: ReactionDraft) -> list[RuleViolation]:
+        violations: list[RuleViolation] = []
+        for comp, path in _all_compounds(draft):
+            smiles_idents = [i for i in comp.identifiers if i.type == "SMILES"]
+            if len(smiles_idents) < 2:
+                continue
+            canonicals: list[str] = []
+            for ident in smiles_idents:
+                canon = canonical_smiles(ident.value)
+                if canon is None:
+                    # Unparseable SMILES — STR-001 will already flag it.
+                    continue
+                canonicals.append(canon)
+            if len(canonicals) < 2:
+                continue
+            distinct = set(canonicals)
+            if len(distinct) > 1:
+                violations.append(
+                    RuleViolation(
+                        rule_id=self.id,
+                        severity=Severity.ERROR,
+                        message=(
+                            f"Compound has {len(distinct)} distinct canonical "
+                            f"SMILES — {sorted(distinct)} — meaning multiple "
+                            "different molecules are claimed under one record."
+                        ),
+                        fix_hint=(
+                            "Pick the correct SMILES for this compound and "
+                            "remove the others. If the paragraph genuinely "
+                            "describes multiple compounds, emit them as "
+                            "separate input/product entries."
+                        ),
+                        path=f"{path}.identifiers",
+                    )
+                )
+        return violations
+
+
+STR_RULES: list[Rule] = [
+    SmilesParses(),
+    NameOrSmilesPresent(),
+    AtomBalanceSanity(),
+    SmilesIdentifiersAreConsistent(),
+]

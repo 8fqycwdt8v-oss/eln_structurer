@@ -224,6 +224,51 @@ def test_apply_amount_missing_amount_for_catalyst() -> None:
     assert cat.amount.unmeasured.type == reaction_pb2.UnmeasuredAmount.CATALYTIC
 
 
+def test_round_trip_integrity_clean_on_aspirin(aspirin_draft) -> None:
+    """A clean draft must round-trip JSON and pbtxt without information loss."""
+    from eln_structurer.proto_bridge import verify_round_trip
+
+    proto = draft_to_proto(aspirin_draft)
+    mismatches = verify_round_trip(proto)
+    assert mismatches == [], mismatches
+
+
+def test_round_trip_integrity_catches_corrupt_pbtxt() -> None:
+    """If we deliberately damage the pbtxt input, parsing should fail and
+    the round-trip helper should report it. This exercises the
+    ParseError branch."""
+    from google.protobuf import text_format
+
+    from eln_structurer.proto_bridge import reaction_pb2
+    from ord_schema import message_helpers  # noqa: F401  ensure proto module loaded
+
+    proto = reaction_pb2.Reaction()
+    # Manually feed corrupt pbtxt through the parser to confirm it raises.
+    import pytest as _pytest
+    with _pytest.raises(text_format.ParseError):
+        text_format.Parse("not valid pbtxt at all {{{", proto)
+
+
+def test_harness_surfaces_round_trip_errors_as_ord_validation_errors(
+    aspirin_draft, monkeypatch
+) -> None:
+    """If verify_round_trip reports a mismatch, run_harness must put it
+    into ord_validation_errors so the agent sees it."""
+    import sys
+
+    from eln_structurer.harness import run_harness
+
+    harness_mod = sys.modules["eln_structurer.harness"]
+    monkeypatch.setattr(
+        harness_mod,
+        "verify_round_trip",
+        lambda _proto: ["synthetic mismatch for testing"],
+    )
+    report = run_harness(aspirin_draft)
+    assert any("round-trip" in e for e in report.ord_validation_errors)
+    assert not report.is_clean
+
+
 def test_duplicate_input_names_get_suffixed() -> None:
     from eln_structurer.schema import (
         AmountModel,

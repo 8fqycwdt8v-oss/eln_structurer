@@ -377,6 +377,136 @@ class MassBalanceSanity(Rule):
         return violations
 
 
+class YieldMassConsistency(Rule):
+    """STO-007: when both yield% and an isolated mass are reported for the
+    same product, they must agree.
+
+    expected_mass = (yield/100) * n_lim * MW_product
+
+    The two numbers come from different parts of the paragraph (the yield
+    block at the end and the isolated-mass block) and a common LLM error
+    is to copy one correctly and miscalculate the other. We allow ±15%
+    tolerance, which covers solvate inclusion and rounding.
+    """
+
+    id = "STO-007"
+    description = (
+        "Reported yield% and isolated mass must agree to within 15% via "
+        "expected_mass = (yield/100) * n_lim * MW_product."
+    )
+
+    TOLERANCE = 0.15
+
+    def check(self, draft: ReactionDraft) -> list[RuleViolation]:
+        limiting_moles, _ = _identify_limiting_moles(draft)
+        if limiting_moles is None or limiting_moles <= 0:
+            return []
+        if not draft.outcomes or not draft.outcomes[0].products:
+            return []
+
+        violations: list[RuleViolation] = []
+        for pi, prod in enumerate(draft.outcomes[0].products):
+            prod_smiles = smiles_of(prod.compound)
+            if not prod_smiles:
+                continue
+            mw_p = mol_weight(prod_smiles)
+            if mw_p is None or mw_p <= 0:
+                continue
+
+            yield_pct: float | None = None
+            mass_g: float | None = None
+            for m in prod.measurements:
+                if m.type == "YIELD":
+                    yield_pct = m.value
+                elif m.type == "AMOUNT" and m.units in _MASS_TO_GRAMS:
+                    mass_g = m.value * _MASS_TO_GRAMS[m.units]
+            if yield_pct is None or mass_g is None or yield_pct <= 0:
+                continue
+
+            expected_mass = (yield_pct / 100.0) * limiting_moles * mw_p
+            if expected_mass <= 0:
+                continue
+            diff = abs(mass_g - expected_mass) / expected_mass
+            if diff > self.TOLERANCE:
+                violations.append(
+                    RuleViolation(
+                        rule_id=self.id,
+                        severity=Severity.ERROR,
+                        message=(
+                            f"Reported yield={yield_pct}% and mass={mass_g:.3g} g "
+                            f"disagree by {diff:.0%}. Expected ~{expected_mass:.3g} g "
+                            f"from n_lim={limiting_moles:.3g} mol × MW={mw_p:.2f}."
+                        ),
+                        fix_hint=(
+                            "One of the two figures was transcribed incorrectly. "
+                            "Re-read the paragraph and reconcile."
+                        ),
+                        path=f"outcomes[0].products[{pi}].measurements",
+                    )
+                )
+        return violations
+
+
+class LimitingReagentIsActuallyLimiting(Rule):
+    """STO-008: the compound flagged is_limiting=True must have the smallest
+    mole count among all REACTANTS with computable moles.
+
+    Defends against the common LLM mistake of marking the "main substrate"
+    by name recognition even when another reactant is actually present in
+    smaller amount.
+    """
+
+    id = "STO-008"
+    description = (
+        "is_limiting=True must be on the REACTANT with the smallest mole count."
+    )
+
+    SAFETY = 0.05  # 5% slack: rounding in transcription is forgivable.
+
+    def check(self, draft: ReactionDraft) -> list[RuleViolation]:
+        # Find the flagged reactant.
+        flagged: tuple[int, int, float] | None = None
+        all_estimates: list[tuple[int, int, float]] = []
+        for i, inp in enumerate(draft.inputs):
+            for j, comp in enumerate(inp.components):
+                if comp.reaction_role != "REACTANT" or comp.amount is None:
+                    continue
+                est = _moles_from_amount(comp.amount, smiles_of(comp))
+                if est.moles is None:
+                    continue
+                all_estimates.append((i, j, est.moles))
+                if comp.is_limiting:
+                    flagged = (i, j, est.moles)
+
+        if flagged is None or len(all_estimates) < 2:
+            return []
+
+        true_min = min(m for _, _, m in all_estimates)
+        if flagged[2] <= true_min * (1 + self.SAFETY):
+            return []
+
+        # Find which compound is actually limiting for a useful error message.
+        culprit_i, culprit_j, _ = min(all_estimates, key=lambda x: x[2])
+        return [
+            RuleViolation(
+                rule_id=self.id,
+                severity=Severity.ERROR,
+                message=(
+                    f"is_limiting=True on inputs[{flagged[0]}].components[{flagged[1]}] "
+                    f"({flagged[2]:.3g} mol), but inputs[{culprit_i}].components"
+                    f"[{culprit_j}] has fewer moles. The flagged compound is "
+                    "not the limiting reagent."
+                ),
+                fix_hint=(
+                    f"Move is_limiting=True to inputs[{culprit_i}].components[{culprit_j}] "
+                    "(or re-check the masses if the paragraph implies a different "
+                    "limiting reagent and the moles arithmetic is wrong)."
+                ),
+                path=f"inputs[{flagged[0]}].components[{flagged[1]}].is_limiting",
+            )
+        ]
+
+
 STO_RULES: list[Rule] = [
     AmountHasUnits(),
     PlausibleVolumes(),
@@ -384,4 +514,6 @@ STO_RULES: list[Rule] = [
     EquivalentsConsistentWithLimiting(),
     YieldRangeSanity(),
     MassBalanceSanity(),
+    YieldMassConsistency(),
+    LimitingReagentIsActuallyLimiting(),
 ]

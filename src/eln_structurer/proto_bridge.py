@@ -329,3 +329,52 @@ def serialize_reaction(
     if fmt == "pbtxt":
         return text_format.MessageToString(reaction_pb)
     raise ValueError(f"Unknown serialization format: {fmt!r}")
+
+
+def verify_round_trip(reaction_pb: reaction_pb2.Reaction) -> list[str]:
+    """Round-trip the proto through JSON and pbtxt and verify byte-stable.
+
+    Returns a list of human-readable mismatch messages — empty when both
+    serialization formats survive a serialize→parse→serialize cycle. Useful
+    as a final integrity check: it ensures the emitted artifact is what we
+    think it is, not just that the in-memory proto validates.
+    """
+    mismatches: list[str] = []
+    # Stable serialized form to compare against — protobuf field ordering
+    # is deterministic in a given protobuf version, so two MessageToString
+    # calls on equivalent messages produce the same bytes.
+    canonical_pbtxt = text_format.MessageToString(reaction_pb)
+    canonical_json = json_format.MessageToJson(
+        reaction_pb, indent=2, sort_keys=True
+    )
+
+    # JSON round-trip
+    try:
+        json_loaded = reaction_pb2.Reaction()
+        json_format.Parse(canonical_json, json_loaded)
+        json_round_tripped = json_format.MessageToJson(
+            json_loaded, indent=2, sort_keys=True
+        )
+        if json_round_tripped != canonical_json:
+            mismatches.append(
+                "json round-trip is lossy: serialize → parse → serialize "
+                "produced a different document. See proto_bridge for the "
+                "oneof / unmeasured-amount handling."
+            )
+    except json_format.ParseError as exc:
+        mismatches.append(f"json round-trip failed to parse: {exc}")
+
+    # pbtxt round-trip
+    try:
+        pbtxt_loaded = reaction_pb2.Reaction()
+        text_format.Parse(canonical_pbtxt, pbtxt_loaded)
+        pbtxt_round_tripped = text_format.MessageToString(pbtxt_loaded)
+        if pbtxt_round_tripped != canonical_pbtxt:
+            mismatches.append(
+                "pbtxt round-trip is lossy: serialize → parse → serialize "
+                "produced a different document."
+            )
+    except text_format.ParseError as exc:
+        mismatches.append(f"pbtxt round-trip failed to parse: {exc}")
+
+    return mismatches

@@ -7,8 +7,10 @@ from pydantic import ValidationError
 
 from eln_structurer.rules.stoichiometry import (
     LimitingReagentIdentifiable,
+    LimitingReagentIsActuallyLimiting,
     MassBalanceSanity,
     PlausibleVolumes,
+    YieldMassConsistency,
     YieldRangeSanity,
 )
 from eln_structurer.schema import (
@@ -134,3 +136,56 @@ def test_mass_balance_errors_on_impossible_yield(aspirin_draft: ReactionDraft) -
     )
     violations = MassBalanceSanity().check(aspirin_draft)
     assert "STO-006" in _ids(violations)
+
+
+def test_yield_mass_consistency_passes_for_aspirin(aspirin_draft: ReactionDraft) -> None:
+    """Aspirin fixture has yield=90%, mass=1.62 g, n_lim=10 mmol, MW≈180.16.
+    Expected: 0.9 × 0.01 × 180.16 = 1.62 g. Exact match."""
+    assert YieldMassConsistency().check(aspirin_draft) == []
+
+
+def test_yield_mass_consistency_fires_on_mismatch(aspirin_draft: ReactionDraft) -> None:
+    """Keep yield at 90% but change the reported mass to 0.5 g — incompatible."""
+    aspirin_draft.outcomes[0].products[0].measurements[1] = ProductMeasurementModel(
+        type="AMOUNT", value=0.5, units="g"
+    )
+    violations = YieldMassConsistency().check(aspirin_draft)
+    assert "STO-007" in _ids(violations)
+
+
+def test_yield_mass_consistency_silent_without_both(aspirin_draft: ReactionDraft) -> None:
+    """Rule needs both a YIELD and an AMOUNT to fire."""
+    # Drop the AMOUNT measurement; keep only YIELD.
+    aspirin_draft.outcomes[0].products[0].measurements = [
+        ProductMeasurementModel(type="YIELD", value=90.0, units="%"),
+    ]
+    assert YieldMassConsistency().check(aspirin_draft) == []
+
+
+def test_limiting_actually_limiting_passes(aspirin_draft: ReactionDraft) -> None:
+    """Aspirin fixture flags salicylic acid (the only quantified REACTANT)
+    as limiting — trivially correct."""
+    assert LimitingReagentIsActuallyLimiting().check(aspirin_draft) == []
+
+
+def test_limiting_actually_limiting_fires_when_wrong(aspirin_draft: ReactionDraft) -> None:
+    """Add a second REACTANT with smaller moles than the currently-flagged
+    limiting reagent. The rule must catch the misidentification."""
+    from eln_structurer.schema import (
+        AmountModel,
+        CompoundIdentifierModel,
+        CompoundModel,
+    )
+    # Salicylic acid currently is_limiting with 10 mmol. Add a phantom
+    # REACTANT with 1 mmol that would actually be limiting.
+    aspirin_draft.inputs[2].components[0] = CompoundModel(
+        identifiers=[
+            CompoundIdentifierModel(type="NAME", value="trace reagent"),
+            CompoundIdentifierModel(type="SMILES", value="CCO"),
+        ],
+        amount=AmountModel(value=1.0, units="mmol"),
+        reaction_role="REACTANT",
+        is_limiting=False,
+    )
+    violations = LimitingReagentIsActuallyLimiting().check(aspirin_draft)
+    assert "STO-008" in _ids(violations)

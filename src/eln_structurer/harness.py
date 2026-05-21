@@ -6,7 +6,11 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
-from eln_structurer.proto_bridge import ProtoBridgeError, draft_to_proto
+from eln_structurer.proto_bridge import (
+    ProtoBridgeError,
+    draft_to_proto,
+    verify_round_trip,
+)
 from eln_structurer.rules import ALL_RULES, RuleViolation, Severity
 from eln_structurer.schema import ReactionDraft
 
@@ -102,6 +106,14 @@ def _run_ord_schema_validation(draft: ReactionDraft) -> tuple[list[str], list[st
     output = validations.validate_message(reaction_pb, raise_on_error=False)
     errors = list(getattr(output, "errors", []) or [])
     warnings = list(getattr(output, "warnings", []) or [])
+
+    # Round-trip integrity: an in-memory proto can pass validate_message
+    # but still serialize to something that can't be parsed back, or that
+    # parses back to a different document. Catch that here so the user
+    # never receives a silently-lossy artifact.
+    for msg in verify_round_trip(reaction_pb):
+        errors.append(f"round-trip integrity: {msg}")
+
     return errors, warnings, None
 
 
