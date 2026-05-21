@@ -224,6 +224,42 @@ def test_apply_amount_missing_amount_for_catalyst() -> None:
     assert cat.amount.unmeasured.type == reaction_pb2.UnmeasuredAmount.CATALYTIC
 
 
+def test_moles_computed_populated_when_mass_and_smiles_present(aspirin_draft) -> None:
+    """For a Compound with mass + SMILES, the bridge fills
+    features['moles_computed']."""
+    proto = draft_to_proto(aspirin_draft)
+    salicylic = proto.inputs["limiting_reactant"].components[0]
+    # Salicylic acid 1.38 g, MW ≈ 138.12 → ~0.01 mol = 10 mmol.
+    moles = salicylic.features["moles_computed"].float_value
+    assert 0.0098 < moles < 0.0102
+
+
+def test_moles_computed_absent_for_unmeasured_amount(aspirin_draft) -> None:
+    """A CATALYST without an amount must NOT get a moles_computed feature."""
+    proto = draft_to_proto(aspirin_draft)
+    cat = proto.inputs["catalyst"].components[0]
+    assert "moles_computed" not in cat.features
+
+
+def test_reaction_smiles_emitted(aspirin_draft) -> None:
+    """The bridge composes a reaction SMILES from inputs and products."""
+    from ord_schema.proto import reaction_pb2
+    proto = draft_to_proto(aspirin_draft)
+    rxn_smiles_idents = [
+        i for i in proto.identifiers
+        if i.type == reaction_pb2.ReactionIdentifier.REACTION_SMILES
+    ]
+    assert len(rxn_smiles_idents) == 1
+    s = rxn_smiles_idents[0].value
+    assert ">" in s and s.count(">") == 2
+    # Left side should include salicylic acid; right side should include
+    # the aspirin product. We assert on substrings (canonical SMILES is
+    # RDKit-dependent and may differ slightly).
+    left, _middle, right = s.split(">")
+    assert "c1ccccc1" in left.replace("(", "").replace(")", "").lower() or "ccccc" in left
+    assert "C(=O)" in right or "CC(=O)" in right
+
+
 def test_round_trip_integrity_clean_on_aspirin(aspirin_draft) -> None:
     """A clean draft must round-trip JSON and pbtxt without information loss."""
     from eln_structurer.proto_bridge import verify_round_trip

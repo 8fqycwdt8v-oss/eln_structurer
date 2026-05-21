@@ -85,6 +85,11 @@ def main() -> None:
     "--max-iters", type=int, default=5, show_default=True,
     help="Maximum repair iterations.",
 )
+@click.option(
+    "--no-critic",
+    is_flag=True,
+    help="Skip the critic-reviser subagent pass (faster, but less robust).",
+)
 @click.option("--debug", is_flag=True, help="Print agent transcript to stderr.")
 def extract_cmd(
     source: str,
@@ -93,6 +98,7 @@ def extract_cmd(
     model: str | None,
     quality: bool,
     max_iters: int,
+    no_critic: bool,
     debug: bool,
 ) -> None:
     """Extract a single reaction paragraph from FILE (or '-' for stdin)."""
@@ -107,7 +113,13 @@ def extract_cmd(
     chosen_model = HIGH_QUALITY_MODEL if quality else (model or DEFAULT_MODEL)
 
     result = asyncio.run(
-        extract(paragraph, model=chosen_model, max_iters=max_iters, debug=debug)
+        extract(
+            paragraph,
+            model=chosen_model,
+            max_iters=max_iters,
+            debug=debug,
+            enable_critic=not no_critic,
+        )
     )
 
     if debug and result.transcript:

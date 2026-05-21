@@ -12,6 +12,7 @@ from collections import Counter
 from ord_schema.message_helpers import json_format, text_format
 from ord_schema.proto import reaction_pb2
 
+from eln_structurer.chemistry import canonical_smiles, mol_weight, smiles_of
 from eln_structurer.schema import (
     AmountModel,
     CompoundModel,
@@ -23,6 +24,9 @@ from eln_structurer.schema import (
     TemperatureModel,
     WorkupModel,
 )
+
+
+_MASS_TO_GRAMS_BRIDGE = {"g": 1.0, "mg": 1e-3, "kg": 1e3}
 
 
 _MASS_UNIT_PROTO = {
@@ -163,6 +167,22 @@ def _build_compound(comp: CompoundModel) -> reaction_pb2.Compound:
             compound_pb.amount.unmeasured.details = "amount not specified in paragraph"
     compound_pb.reaction_role = _ROLE_PROTO[comp.reaction_role]
     compound_pb.is_limiting = comp.is_limiting
+
+    # Auto-derived enrichment: when we have both a SMILES and a mass amount,
+    # compute moles locally and stash on features["moles_computed"]. This
+    # lets downstream consumers cross-check stoichiometry without having to
+    # redo the RDKit math.
+    smi = smiles_of(comp)
+    if (
+        smi is not None
+        and comp.amount is not None
+        and comp.amount.units in _MASS_TO_GRAMS_BRIDGE
+    ):
+        mw = mol_weight(smi)
+        if mw is not None and mw > 0:
+            grams = comp.amount.value * _MASS_TO_GRAMS_BRIDGE[comp.amount.units]
+            compound_pb.features["moles_computed"].float_value = grams / mw
+
     return compound_pb
 
 
@@ -317,7 +337,63 @@ def draft_to_proto(draft: ReactionDraft) -> reaction_pb2.Reaction:
     reaction_pb.provenance.record_created.person.name = "eln_structurer"
     reaction_pb.provenance.record_created.person.email = "eln-structurer@invalid.local"
 
+    # Generate a reaction SMILES from the structured inputs/products and
+    # store it as a top-level identifier. Pure post-processing; the rules
+    # already validated that the underlying SMILES parse. Skips emission
+    # if either side is empty.
+    rxn_smiles = _build_reaction_smiles(draft)
+    if rxn_smiles is not None and not any(
+        i.type == reaction_pb2.ReactionIdentifier.REACTION_SMILES
+        for i in reaction_pb.identifiers
+    ):
+        ri = reaction_pb.identifiers.add()
+        ri.type = reaction_pb2.ReactionIdentifier.REACTION_SMILES
+        ri.value = rxn_smiles
+
     return reaction_pb
+
+
+def _build_reaction_smiles(draft: ReactionDraft) -> str | None:
+    """Compose a canonical reaction SMILES from the draft.
+
+    Format: ``reactants.reagents.solvents>catalysts>products`` with periods
+    as in-side joins. The split into the three SMILES "sides" follows the
+    ORD convention (reactants/reagents on the left, products on the right,
+    catalysts in the middle). Returns None if there is nothing on either
+    the left or the right (a reaction SMILES needs both).
+    """
+    left_roles = {"REACTANT", "REAGENT"}
+    middle_roles = {"CATALYST"}
+
+    def _collect(roles: set[str]) -> list[str]:
+        out: list[str] = []
+        for inp in draft.inputs:
+            for comp in inp.components:
+                if comp.reaction_role not in roles:
+                    continue
+                smi = smiles_of(comp)
+                if smi is None:
+                    continue
+                canon = canonical_smiles(smi)
+                if canon:
+                    out.append(canon)
+        return out
+
+    left = _collect(left_roles)
+    middle = _collect(middle_roles)
+    right: list[str] = []
+    for outcome in draft.outcomes:
+        for prod in outcome.products:
+            smi = smiles_of(prod.compound)
+            if smi is None:
+                continue
+            canon = canonical_smiles(smi)
+            if canon:
+                right.append(canon)
+
+    if not left or not right:
+        return None
+    return f"{'.'.join(left)}>{'.'.join(middle)}>{'.'.join(right)}"
 
 
 def serialize_reaction(
