@@ -274,14 +274,16 @@ class YieldRangeSanity(Rule):
                 for mi, m in enumerate(prod.measurements):
                     if m.type != "YIELD":
                         continue
+                    path = f"outcomes[{oi}].products[{pi}].measurements[{mi}].value"
                     if m.value < 0:
                         violations.append(
                             RuleViolation(
                                 rule_id=self.id,
                                 severity=Severity.ERROR,
-                                message=f"Negative yield: {m.value}.",
+                                message="Negative yield.",
                                 fix_hint="Yields are non-negative; re-read the paragraph.",
-                                path=f"outcomes[{oi}].products[{pi}].measurements[{mi}].value",
+                                path=path,
+                                actual_value=f"{m.value}%",
                             )
                         )
                     elif m.value > 105:
@@ -290,14 +292,15 @@ class YieldRangeSanity(Rule):
                                 rule_id=self.id,
                                 severity=Severity.ERROR,
                                 message=(
-                                    f"Yield {m.value}% is implausible (>105%). "
-                                    "Likely a unit confusion (mass vs. mol) or transcription error."
+                                    "Yield is implausible (>105%). Likely a unit "
+                                    "confusion (mass vs. mol) or transcription error."
                                 ),
                                 fix_hint=(
                                     "Re-check the paragraph. Yields >100% sometimes occur "
                                     "from solvated forms but rarely exceed 102%."
                                 ),
-                                path=f"outcomes[{oi}].products[{pi}].measurements[{mi}].value",
+                                path=path,
+                                actual_value=f"{m.value}%",
                             )
                         )
                     elif m.value > 102:
@@ -305,9 +308,10 @@ class YieldRangeSanity(Rule):
                             RuleViolation(
                                 rule_id=self.id,
                                 severity=Severity.WARNING,
-                                message=f"Yield {m.value}% is high (>102%); confirm the paragraph reports this.",
+                                message="Yield is high (>102%); confirm the paragraph reports this.",
                                 fix_hint="Check whether the yield is a solvated or hydrated form.",
-                                path=f"outcomes[{oi}].products[{pi}].measurements[{mi}].value",
+                                path=path,
+                                actual_value=f"{m.value}%",
                             )
                         )
         return violations

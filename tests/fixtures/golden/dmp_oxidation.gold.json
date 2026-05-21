@@ -1,0 +1,13 @@
+{
+  "reactant_names": ["benzyl alcohol"],
+  "reactant_smiles": ["OCc1ccccc1"],
+  "reagent_names": ["dess-martin periodinane", "nahco3"],
+  "solvent_names": ["dcm"],
+  "catalyst_names": [],
+  "product_names": ["benzaldehyde"],
+  "product_smiles": ["O=Cc1ccccc1"],
+  "yield_percent": 90.0,
+  "temperature_celsius": 25.0,
+  "duration_minutes": 60.0,
+  "workup_verbs": ["ADDITION", "EXTRACTION", "WASH", "DRY_WITH_MATERIAL", "FILTRATION", "CONCENTRATION", "FLASH_CHROMATOGRAPHY"]
+}

@@ -33,6 +33,11 @@ from eln_structurer.tools.validate_smiles import (
     check_smiles,
     validate_smiles,
 )
+from eln_structurer.tools.verify_quote import (
+    QuoteCheck,
+    verify_quote,
+    verify_quote_against,
+)
 
 __all__ = [
     # SDK tool handlers
@@ -42,6 +47,7 @@ __all__ = [
     "compute_mw",
     "expand_abbreviation",
     "detect_reaction_class",
+    "verify_quote",
     # Pure core functions + result types
     "check_smiles",
     "SmilesCheck",
@@ -53,4 +59,6 @@ __all__ = [
     "AbbreviationLookup",
     "classify_from_payload",
     "ClassifyResult",
+    "verify_quote_against",
+    "QuoteCheck",
 ]

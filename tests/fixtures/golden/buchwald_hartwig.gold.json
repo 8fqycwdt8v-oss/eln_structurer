@@ -1,0 +1,13 @@
+{
+  "reactant_names": ["4-bromoanisole", "morpholine"],
+  "reactant_smiles": ["COc1ccc(Br)cc1", "C1COCCN1"],
+  "reagent_names": ["xphos", "cs2co3"],
+  "solvent_names": ["1,4-dioxane"],
+  "catalyst_names": ["pd(oac)2"],
+  "product_names": ["4-(4-methoxyphenyl)morpholine"],
+  "product_smiles": ["COc1ccc(N2CCOCC2)cc1"],
+  "yield_percent": 92.0,
+  "temperature_celsius": 100.0,
+  "duration_minutes": 1080.0,
+  "workup_verbs": ["EXTRACTION", "WASH", "DRY_WITH_MATERIAL", "FILTRATION", "CONCENTRATION", "FLASH_CHROMATOGRAPHY"]
+}

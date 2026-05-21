@@ -1,0 +1,13 @@
+{
+  "reactant_names": ["benzoic acid", "aniline"],
+  "reactant_smiles": ["O=C(O)c1ccccc1", "Nc1ccccc1"],
+  "reagent_names": ["hatu", "n n-diisopropylethylamine"],
+  "solvent_names": ["dmf"],
+  "catalyst_names": [],
+  "product_names": ["n-phenylbenzamide"],
+  "product_smiles": ["O=C(Nc1ccccc1)c1ccccc1"],
+  "yield_percent": 92.0,
+  "temperature_celsius": 25.0,
+  "duration_minutes": 240.0,
+  "workup_verbs": ["EXTRACTION", "WASH", "DRY_WITH_MATERIAL", "FILTRATION", "CONCENTRATION", "FLASH_CHROMATOGRAPHY"]
+}

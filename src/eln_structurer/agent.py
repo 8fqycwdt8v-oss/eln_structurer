@@ -32,6 +32,7 @@ from claude_agent_sdk import (
     AssistantMessage,
     ClaudeAgentOptions,
     ClaudeSDKClient,
+    ResultMessage,
     TextBlock,
     create_sdk_mcp_server,
 )
@@ -46,6 +47,7 @@ from eln_structurer.tools import (
     finalize_reaction,
     validate_reaction,
     validate_smiles,
+    verify_quote,
 )
 from eln_structurer.tools.finalize_reaction import (
     FinalizedReaction,
@@ -63,6 +65,31 @@ MAX_PARAGRAPH_CHARS = 16_000
 
 
 @dataclass
+class UsageStats:
+    """LLM usage and cost. Aggregated across the primary loop AND any
+    critic / revision rounds in this extraction."""
+    total_cost_usd: float = 0.0
+    duration_ms: int = 0
+    duration_api_ms: int = 0
+    num_turns: int = 0
+    usage_blob: dict[str, Any] = field(default_factory=dict)
+
+    def merge(self, other: ResultMessage) -> None:
+        if other.total_cost_usd is not None:
+            self.total_cost_usd += other.total_cost_usd
+        self.duration_ms += other.duration_ms
+        self.duration_api_ms += other.duration_api_ms
+        self.num_turns += other.num_turns
+        if other.usage:
+            # Sum token counts from concurrent calls when keys overlap.
+            for k, v in other.usage.items():
+                if isinstance(v, (int, float)):
+                    self.usage_blob[k] = self.usage_blob.get(k, 0) + v
+                else:
+                    self.usage_blob.setdefault(k, v)
+
+
+@dataclass
 class ExtractResult:
     success: bool
     pbtxt: str
@@ -77,6 +104,7 @@ class ExtractResult:
     rule_history: dict[str, int] = field(default_factory=dict)
     critic_ran: bool = False
     revision_triggered: bool = False
+    usage: UsageStats = field(default_factory=UsageStats)
 
 
 def _build_failure_summary(
@@ -113,6 +141,7 @@ async def _run_primary_loop(
     max_turns: int,
     debug: bool,
     transcript: list[str],
+    usage: UsageStats,
 ) -> None:
     """Run one pass of the primary tool-using agent against the user prompt."""
     server = create_sdk_mcp_server(
@@ -125,6 +154,7 @@ async def _run_primary_loop(
             compute_mw,
             expand_abbreviation,
             detect_reaction_class,
+            verify_quote,
         ],
     )
     options = ClaudeAgentOptions(
@@ -137,6 +167,7 @@ async def _run_primary_loop(
             "mcp__eln__compute_mw",
             "mcp__eln__expand_abbreviation",
             "mcp__eln__detect_reaction_class",
+            "mcp__eln__verify_quote",
         ],
         system_prompt=build_system_prompt(),
         max_turns=max_turns,
@@ -148,6 +179,8 @@ async def _run_primary_loop(
                 for block in message.content:
                     if isinstance(block, TextBlock):
                         transcript.append(block.text)
+            elif isinstance(message, ResultMessage):
+                usage.merge(message)
 
 
 async def extract(
@@ -184,6 +217,7 @@ async def extract(
     transcript: list[str] = []
     critic_report: CriticReport | None = None
     revision_triggered = False
+    usage = UsageStats()
 
     try:
         user_prompt = USER_PROMPT_TEMPLATE.format(paragraph=normalization.normalized)
@@ -193,6 +227,7 @@ async def extract(
             max_turns=max_iters * 3,
             debug=debug,
             transcript=transcript,
+            usage=usage,
         )
 
         if (
@@ -257,6 +292,7 @@ async def extract(
         rule_history=dict(finalized.rule_history),
         critic_ran=critic_report is not None,
         revision_triggered=revision_triggered,
+        usage=usage,
         failure_summary=(
             {}
             if success

@@ -25,6 +25,8 @@ class ElnStructurerAdapter(Adapter):
         self._last_critic_ran: bool = False
         self._last_revision_triggered: bool = False
         self._last_rule_history: dict[str, int] = {}
+        self._last_cost_usd: float = 0.0
+        self._last_api_duration_ms: int = 0
 
     async def is_available(self) -> bool:
         return anthropic_key_available()
@@ -42,4 +44,6 @@ class ElnStructurerAdapter(Adapter):
         self._last_critic_ran = result.critic_ran
         self._last_revision_triggered = result.revision_triggered
         self._last_rule_history = dict(result.rule_history)
+        self._last_cost_usd = result.usage.total_cost_usd
+        self._last_api_duration_ms = result.usage.duration_api_ms
         return canonicalize_ord_json(result.json_text)

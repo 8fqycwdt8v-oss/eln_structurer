@@ -36,6 +36,8 @@ class AdapterResult:
     critic_ran: bool = False
     revision_triggered: bool = False
     rule_history: dict[str, int] | None = None
+    cost_usd: float = 0.0
+    api_duration_ms: int = 0
 
 
 class Adapter(ABC):

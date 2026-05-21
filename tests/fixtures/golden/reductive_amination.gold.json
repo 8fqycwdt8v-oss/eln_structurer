@@ -1,0 +1,13 @@
+{
+  "reactant_names": ["benzaldehyde", "piperidine"],
+  "reactant_smiles": ["O=Cc1ccccc1", "C1CCNCC1"],
+  "reagent_names": ["sodium triacetoxyborohydride", "acetic acid"],
+  "solvent_names": ["dichloroethane"],
+  "catalyst_names": [],
+  "product_names": ["n-benzylpiperidine"],
+  "product_smiles": ["C(N1CCCCC1)c1ccccc1"],
+  "yield_percent": 90.0,
+  "temperature_celsius": 25.0,
+  "duration_minutes": 960.0,
+  "workup_verbs": ["ADDITION", "EXTRACTION", "WASH", "DRY_WITH_MATERIAL", "FILTRATION", "CONCENTRATION", "FLASH_CHROMATOGRAPHY"]
+}

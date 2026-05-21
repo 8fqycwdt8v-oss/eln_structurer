@@ -142,8 +142,8 @@ class TemperatureRangeSanity(Rule):
                     rule_id=self.id,
                     severity=Severity.ERROR,
                     message=(
-                        f"Temperature setpoint {c} °C is outside the plausible "
-                        f"range [{self.LOW_C}, {self.HIGH_C}]. Likely a unit "
+                        f"Temperature setpoint is outside the plausible "
+                        f"range [{self.LOW_C}, {self.HIGH_C}] °C. Likely a unit "
                         "confusion (K vs. °C) or a transcription error."
                     ),
                     fix_hint=(
@@ -153,6 +153,7 @@ class TemperatureRangeSanity(Rule):
                         "reactor description in conditions.atmosphere or notes."
                     ),
                     path="conditions.temperature.setpoint_celsius",
+                    actual_value=f"{c} °C",
                 )
             ]
         return []
@@ -182,9 +183,10 @@ class DurationRangeSanity(Rule):
                     RuleViolation(
                         rule_id=self.id,
                         severity=Severity.ERROR,
-                        message=f"Negative duration at {path}: {minutes} min.",
+                        message="Negative duration.",
                         fix_hint="Durations are non-negative; re-read the paragraph.",
                         path=path,
+                        actual_value=f"{minutes} min",
                     )
                 )
             elif minutes > self.MAX_MINUTES:
@@ -193,7 +195,7 @@ class DurationRangeSanity(Rule):
                         rule_id=self.id,
                         severity=Severity.ERROR,
                         message=(
-                            f"Duration {minutes} min (>2 weeks) at {path}. Likely "
+                            "Duration is implausibly long (>2 weeks). Likely "
                             "a unit confusion (s vs. min vs. h)."
                         ),
                         fix_hint=(
@@ -201,6 +203,7 @@ class DurationRangeSanity(Rule):
                             "convert to minutes: minutes = hours * 60."
                         ),
                         path=path,
+                        actual_value=f"{minutes} min",
                     )
                 )
         return violations

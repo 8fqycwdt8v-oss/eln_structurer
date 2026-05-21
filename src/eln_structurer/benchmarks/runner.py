@@ -40,6 +40,8 @@ class CaseRun:
     critic_ran: bool = False
     revision_triggered: bool = False
     rule_history: dict[str, int] = field(default_factory=dict)
+    cost_usd: float = 0.0
+    api_duration_ms: int = 0
 
 
 def _failure_run(
@@ -88,6 +90,8 @@ async def run_adapter(adapter: Adapter, paragraph: str) -> AdapterResult:
             critic_ran=getattr(adapter, "_last_critic_ran", False),
             revision_triggered=getattr(adapter, "_last_revision_triggered", False),
             rule_history=getattr(adapter, "_last_rule_history", None),
+            cost_usd=getattr(adapter, "_last_cost_usd", 0.0),
+            api_duration_ms=getattr(adapter, "_last_api_duration_ms", 0),
         )
     except AdapterUnavailable as exc:
         return AdapterResult(
@@ -152,6 +156,8 @@ async def run_benchmark(
                         critic_ran=result.critic_ran,
                         revision_triggered=result.revision_triggered,
                         rule_history=dict(result.rule_history or {}),
+                        cost_usd=result.cost_usd,
+                        api_duration_ms=result.api_duration_ms,
                     )
                 )
             else:
@@ -223,9 +229,9 @@ def render_markdown_report(runs: list[CaseRun]) -> str:
         lines.extend(["", "## Loop telemetry (successful runs)", ""])
         lines.append(
             "| adapter | fixture | iterations | critic_ran | "
-            "revision_triggered | top rule fired |"
+            "revision_triggered | cost (USD) | API ms | top rule fired |"
         )
-        lines.append("|" + "---|" * 6)
+        lines.append("|" + "---|" * 8)
         for r in telemetry_rows:
             top_rule = "—"
             if r.rule_history:
@@ -233,11 +239,13 @@ def render_markdown_report(runs: list[CaseRun]) -> str:
                     r.rule_history.items(), key=lambda kv: kv[1]
                 )
                 top_rule = f"{top_rule_id} (×{top_rule_count})"
+            cost = f"${r.cost_usd:.4f}" if r.cost_usd else "—"
+            api = f"{r.api_duration_ms}" if r.api_duration_ms else "—"
             lines.append(
                 f"| {r.adapter} | {r.fixture} | {r.iterations} | "
                 f"{'yes' if r.critic_ran else 'no'} | "
                 f"{'yes' if r.revision_triggered else 'no'} | "
-                f"{top_rule} |"
+                f"{cost} | {api} | {top_rule} |"
             )
 
     lines.extend(["", "## Failures", ""])
@@ -254,3 +262,37 @@ def run_benchmark_sync(
     cases: list[FixtureCase], adapter_names: list[str]
 ) -> list[CaseRun]:
     return asyncio.run(run_benchmark(cases, adapter_names))
+
+
+def runs_to_json(runs: list[CaseRun]) -> str:
+    """Serialize CaseRun records for snapshot-based comparison."""
+    import json
+
+    payload = [
+        {
+            "fixture": r.fixture,
+            "adapter": r.adapter,
+            "success": r.success,
+            "error": r.error,
+            "elapsed_seconds": r.elapsed_seconds,
+            "macro_f1": r.macro_f1,
+            "field_scores": [
+                {
+                    "field_name": s.field_name,
+                    "precision": s.precision,
+                    "recall": s.recall,
+                    "f1": s.f1,
+                    "support": s.support,
+                }
+                for s in r.field_scores
+            ],
+            "iterations": r.iterations,
+            "critic_ran": r.critic_ran,
+            "revision_triggered": r.revision_triggered,
+            "rule_history": r.rule_history,
+            "cost_usd": r.cost_usd,
+            "api_duration_ms": r.api_duration_ms,
+        }
+        for r in runs
+    ]
+    return json.dumps(payload, indent=2)

@@ -231,6 +231,26 @@ beats abstract rule recitation on the first pass.
 - Use the `notes` field for citation / provenance details mentioned in the
   paragraph (paper title, DOI, supporting info section, etc.).
 
+# Grounded numerics & honest gaps (anti-hallucination)
+
+- For EVERY numeric value you emit (mass, volume, moles, equivalents,
+  yield %, temperature, duration), set `source_quote` to the exact
+  substring of the paragraph that contains both the number AND its unit.
+  Example: `{{"value": 1.38, "units": "g", "source_quote": "1.38 g, 10.0 mmol"}}`.
+- You MAY call `verify_quote` before committing a quote to confirm it
+  appears in the paragraph. Saves a wasted validate→fix cycle.
+- For values you DERIVED (equivalents computed from masses, hours
+  converted to minutes, °F → °C), set `inferred=true` instead of
+  populating source_quote.
+- For fields the paragraph does NOT specify, do NOT silently omit them.
+  Instead, add a JSONPath-like string to the top-level `unspecified_fields`
+  list. Examples:
+    "conditions.duration_minutes"
+    "conditions.atmosphere"
+    "outcomes[0].reaction_time_minutes"
+  This makes "the paragraph didn't say" first-class instead of
+  indistinguishable from "I forgot".
+
 # {heuristics}
 
 # Workup vocabulary

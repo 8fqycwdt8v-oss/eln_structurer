@@ -175,12 +175,25 @@ def extract_cmd(
     default=None,
     help="Write the markdown report to this file (default: stdout).",
 )
-def bench_cmd(fixtures_dir: Path, adapter_names: tuple[str, ...], out_path: Path | None) -> None:
+@click.option(
+    "--snapshot",
+    "snapshot_path",
+    type=click.Path(dir_okay=False, writable=True, path_type=Path),
+    default=None,
+    help="Also save raw CaseRun records as JSON for later `bench-compare`.",
+)
+def bench_cmd(
+    fixtures_dir: Path,
+    adapter_names: tuple[str, ...],
+    out_path: Path | None,
+    snapshot_path: Path | None,
+) -> None:
     """Run the benchmark harness across all adapters on the golden fixture set."""
     from eln_structurer.benchmarks.runner import (
         discover_fixtures,
         render_markdown_report,
         run_benchmark_sync,
+        runs_to_json,
     )
 
     paragraphs_dir = fixtures_dir / "paragraphs"
@@ -202,6 +215,48 @@ def bench_cmd(fixtures_dir: Path, adapter_names: tuple[str, ...], out_path: Path
     if out_path:
         out_path.write_text(report, encoding="utf-8")
         console.print(f"[green]Wrote report to {out_path}[/green]")
+    else:
+        click.echo(report)
+    if snapshot_path:
+        snapshot_path.write_text(runs_to_json(runs), encoding="utf-8")
+        console.print(f"[green]Wrote snapshot JSON to {snapshot_path}[/green]")
+
+
+@main.command("bench-compare")
+@click.argument(
+    "baseline",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+)
+@click.argument(
+    "current",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+)
+@click.option(
+    "--out",
+    "out_path",
+    type=click.Path(dir_okay=False, writable=True, path_type=Path),
+    default=None,
+    help="Write the comparison report here (default: stdout).",
+)
+def bench_compare_cmd(baseline: Path, current: Path, out_path: Path | None) -> None:
+    """Compare two snapshot JSONs produced by `bench --snapshot`."""
+    from eln_structurer.benchmarks.compare import (
+        load_run_json,
+        paired_comparison,
+        render_comparison_report,
+    )
+
+    baseline_runs = load_run_json(baseline)
+    current_runs = load_run_json(current)
+    deltas, summary = paired_comparison(baseline_runs, current_runs)
+    report = render_comparison_report(
+        deltas, summary,
+        baseline_label=baseline.stem,
+        current_label=current.stem,
+    )
+    if out_path:
+        out_path.write_text(report, encoding="utf-8")
+        console.print(f"[green]Wrote comparison to {out_path}[/green]")
     else:
         click.echo(report)
 

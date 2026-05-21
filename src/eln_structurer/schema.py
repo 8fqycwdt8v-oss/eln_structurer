@@ -68,6 +68,24 @@ class AmountModel(BaseModel):
 
     value: float = Field(..., description="Numeric value, e.g. 1.25")
     units: AmountUnit = Field(..., description="One of the allowed unit strings")
+    source_quote: str | None = Field(
+        default=None,
+        description=(
+            "Exact substring from the source paragraph the value was lifted "
+            "from (e.g. '1.38 g, 10.0 mmol'). When set, NUM-001 verifies it "
+            "appears verbatim in ReactionDraft.source_paragraph. Use this "
+            "for every value transcribed from the paragraph; leave it null "
+            "(and set inferred=True) for values you derived."
+        ),
+    )
+    inferred: bool = Field(
+        default=False,
+        description=(
+            "True if the value was derived (e.g. equivalents computed from "
+            "masses, hours-to-minutes conversion, °F-to-°C conversion). "
+            "Inferred values do NOT need a source_quote."
+        ),
+    )
 
     @model_validator(mode="after")
     def _positive_value(self) -> "AmountModel":
@@ -150,6 +168,17 @@ class ProductMeasurementModel(BaseModel):
     value: float
     units: str | None = None
     is_normalized: bool = False
+    source_quote: str | None = Field(
+        default=None,
+        description=(
+            "Exact substring from the source paragraph the measurement was "
+            "lifted from (e.g. '92%' or '181 mg'). Verified by NUM-001."
+        ),
+    )
+    inferred: bool = Field(
+        default=False,
+        description="True if the measurement was derived rather than quoted.",
+    )
 
 
 class ProductModel(BaseModel):
@@ -177,6 +206,16 @@ class ReactionDraft(BaseModel):
     source_paragraph: str = Field(
         ...,
         description="The original unstructured paragraph this draft was derived from.",
+    )
+    unspecified_fields: list[str] = Field(
+        default_factory=list,
+        description=(
+            "JSONPath-like strings naming fields the paragraph did NOT "
+            "specify. Use this instead of silently omitting fields. "
+            "Examples: 'conditions.duration_minutes', "
+            "'conditions.atmosphere', 'outcomes[0].products[0].measurements:YIELD'. "
+            "Verified by NUM-003."
+        ),
     )
 
     @model_validator(mode="after")

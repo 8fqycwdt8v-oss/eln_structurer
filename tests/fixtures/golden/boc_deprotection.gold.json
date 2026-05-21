@@ -1,0 +1,13 @@
+{
+  "reactant_names": ["n-boc-piperidine"],
+  "reactant_smiles": ["O=C(OC(C)(C)C)N1CCCCC1"],
+  "reagent_names": ["trifluoroacetic acid"],
+  "solvent_names": ["dcm"],
+  "catalyst_names": [],
+  "product_names": ["piperidine"],
+  "product_smiles": ["C1CCNCC1"],
+  "yield_percent": 92.0,
+  "temperature_celsius": 25.0,
+  "duration_minutes": 120.0,
+  "workup_verbs": ["CONCENTRATION", "ADDITION", "EXTRACTION", "DRY_WITH_MATERIAL", "FILTRATION", "CONCENTRATION"]
+}
