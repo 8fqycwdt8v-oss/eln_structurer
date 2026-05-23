@@ -223,8 +223,3 @@ class ReactionDraft(BaseModel):
         if not self.inputs:
             raise ValueError("ReactionDraft.inputs must contain at least one input")
         return self
-
-
-def reaction_draft_json_schema() -> dict:
-    """Return the JSON Schema for the draft, suitable for embedding in a prompt."""
-    return ReactionDraft.model_json_schema()

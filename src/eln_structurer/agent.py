@@ -59,9 +59,10 @@ from eln_structurer.tools.finalize_reaction import (
 DEFAULT_MODEL = "claude-sonnet-4-6"
 HIGH_QUALITY_MODEL = "claude-opus-4-7"
 
-# Hard cap on paragraph length — beyond this we refuse to call the LLM at
-# all rather than blow the prompt window on garbage. Roughly 4k tokens.
-MAX_PARAGRAPH_CHARS = 16_000
+# Backwards-compatible alias — ``config.DEFAULT_EXTRACTOR_CONFIG`` is the
+# canonical source. Kept so existing imports keep working.
+from eln_structurer.config import DEFAULT_EXTRACTOR_CONFIG as _CFG  # noqa: E402
+MAX_PARAGRAPH_CHARS = _CFG.max_paragraph_chars
 
 
 @dataclass
@@ -134,7 +135,7 @@ def _critic_findings_dicts(critic: CriticReport | None) -> list[dict]:
     ]
 
 
-async def _run_primary_loop(
+async def _run_agent_pass(
     user_prompt: str,
     *,
     model: str,
@@ -221,7 +222,7 @@ async def extract(
 
     try:
         user_prompt = USER_PROMPT_TEMPLATE.format(paragraph=normalization.normalized)
-        await _run_primary_loop(
+        await _run_agent_pass(
             user_prompt,
             model=model,
             max_turns=max_iters * 3,
@@ -261,7 +262,7 @@ async def extract(
                     + "\n\n"
                     + user_prompt
                 )
-                await _run_primary_loop(
+                await _run_agent_pass(
                     revision_prompt,
                     model=model,
                     max_turns=max_iters * 3,

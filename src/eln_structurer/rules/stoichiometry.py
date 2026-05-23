@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from eln_structurer.rules.base import Rule, RuleViolation, Severity
+from eln_structurer.rules.base import Rule, RuleViolation, Severity, register_rule
 from eln_structurer.chemistry import mol_weight, smiles_of
 from eln_structurer.schema import (
     AmountModel,
@@ -77,6 +77,7 @@ def _identify_limiting_moles(draft: ReactionDraft) -> tuple[float | None, bool]:
     return min(mole_counts), True
 
 
+@register_rule
 class AmountHasUnits(Rule):
     id = "STO-001"
     description = "Every AmountModel must have non-empty units."
@@ -101,6 +102,7 @@ class AmountHasUnits(Rule):
         return violations
 
 
+@register_rule
 class PlausibleVolumes(Rule):
     id = "STO-003"
     description = "Volumes within a reasonable bench-scale range."
@@ -141,6 +143,7 @@ class PlausibleVolumes(Rule):
         return violations
 
 
+@register_rule
 class LimitingReagentIdentifiable(Rule):
     id = "STO-004"
     description = "Exactly one limiting reagent must be identifiable."
@@ -214,6 +217,7 @@ class LimitingReagentIdentifiable(Rule):
         return []
 
 
+@register_rule
 class EquivalentsConsistentWithLimiting(Rule):
     id = "STO-002"
     description = (
@@ -263,6 +267,7 @@ class EquivalentsConsistentWithLimiting(Rule):
         return violations
 
 
+@register_rule
 class YieldRangeSanity(Rule):
     id = "STO-005"
     description = "Reported product yields should be within 0–105%."
@@ -317,6 +322,7 @@ class YieldRangeSanity(Rule):
         return violations
 
 
+@register_rule
 class MassBalanceSanity(Rule):
     """STO-006: reported product mass must not exceed the chemical maximum.
 
@@ -381,6 +387,7 @@ class MassBalanceSanity(Rule):
         return violations
 
 
+@register_rule
 class YieldMassConsistency(Rule):
     """STO-007: when both yield% and an isolated mass are reported for the
     same product, they must agree.
@@ -451,6 +458,7 @@ class YieldMassConsistency(Rule):
         return violations
 
 
+@register_rule
 class LimitingReagentIsActuallyLimiting(Rule):
     """STO-008: the compound flagged is_limiting=True must have the smallest
     mole count among all REACTANTS with computable moles.
@@ -511,13 +519,3 @@ class LimitingReagentIsActuallyLimiting(Rule):
         ]
 
 
-STO_RULES: list[Rule] = [
-    AmountHasUnits(),
-    PlausibleVolumes(),
-    LimitingReagentIdentifiable(),
-    EquivalentsConsistentWithLimiting(),
-    YieldRangeSanity(),
-    MassBalanceSanity(),
-    YieldMassConsistency(),
-    LimitingReagentIsActuallyLimiting(),
-]

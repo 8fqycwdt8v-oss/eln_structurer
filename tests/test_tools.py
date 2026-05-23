@@ -17,13 +17,12 @@ from eln_structurer.schema import (
 )
 from eln_structurer.tools import (
     compute_mw,
-    compute_mw_from_smiles,
     expand_abbreviation,
     finalize_reaction,
-    lookup_abbreviation,
     validate_reaction,
     validate_smiles,
 )
+from eln_structurer.tools.core import compute_mw_from_smiles, lookup_abbreviation
 from eln_structurer.tools.finalize_reaction import (
     FinalizedReaction,
     bind_finalized_slot,

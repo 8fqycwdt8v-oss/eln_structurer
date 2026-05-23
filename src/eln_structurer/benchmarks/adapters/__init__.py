@@ -18,11 +18,11 @@ from eln_structurer.benchmarks.adapters.base import (
     AdapterUnavailable,
 )
 from eln_structurer.benchmarks.adapters.eln import ElnStructurerAdapter
-from eln_structurer.benchmarks.adapters.naive_llm import NaiveLlmAdapter
-from eln_structurer.benchmarks.adapters.openchemie import OpenChemIEAdapter
-from eln_structurer.benchmarks.adapters.paragraph2actions import (
+from eln_structurer.benchmarks.adapters.experimental.openchemie import OpenChemIEAdapter
+from eln_structurer.benchmarks.adapters.experimental.paragraph2actions import (
     Paragraph2ActionsAdapter,
 )
+from eln_structurer.benchmarks.adapters.naive_llm import NaiveLlmAdapter
 
 
 AdapterFactory = Callable[[], Adapter]

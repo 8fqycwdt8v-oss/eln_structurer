@@ -19,7 +19,7 @@ from eln_structurer.schema import (
     ReactionInputModel,
     TemperatureModel,
 )
-from eln_structurer.tools import verify_quote_against
+from eln_structurer.tools.core import verify_quote_against
 from tests.conftest import rule_ids as _ids
 
 

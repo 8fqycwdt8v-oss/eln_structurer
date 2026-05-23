@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from eln_structurer.rules.base import Rule, RuleViolation, Severity
+from eln_structurer.rules.base import Rule, RuleViolation, Severity, register_rule
 from eln_structurer.schema import ReactionDraft
 
 
+@register_rule
 class HasReactant(Rule):
     id = "CMP-001"
     description = "At least one input must have role REACTANT."
@@ -30,6 +31,7 @@ class HasReactant(Rule):
         ]
 
 
+@register_rule
 class HasProduct(Rule):
     id = "CMP-002"
     description = "At least one outcome with at least one product."
@@ -53,6 +55,7 @@ class HasProduct(Rule):
         ]
 
 
+@register_rule
 class HasTemperature(Rule):
     id = "CMP-003"
     description = "conditions.temperature must be set (even if AMBIENT)."
@@ -75,6 +78,7 @@ class HasTemperature(Rule):
         return []
 
 
+@register_rule
 class HasDuration(Rule):
     id = "CMP-004"
     description = "Reaction duration should be set somewhere."
@@ -99,6 +103,7 @@ class HasDuration(Rule):
         ]
 
 
+@register_rule
 class NotesCaptureSource(Rule):
     id = "CMP-005"
     description = "notes should capture provenance / source paragraph reference."
@@ -121,6 +126,7 @@ class NotesCaptureSource(Rule):
         return []
 
 
+@register_rule
 class TemperatureRangeSanity(Rule):
     id = "CMP-006"
     description = "Reaction temperature should be within a chemically plausible range."
@@ -159,6 +165,7 @@ class TemperatureRangeSanity(Rule):
         return []
 
 
+@register_rule
 class DurationRangeSanity(Rule):
     id = "CMP-007"
     description = "Reaction duration should be within a plausible bench-scale range."
@@ -209,12 +216,3 @@ class DurationRangeSanity(Rule):
         return violations
 
 
-CMP_RULES: list[Rule] = [
-    HasReactant(),
-    HasProduct(),
-    HasTemperature(),
-    HasDuration(),
-    NotesCaptureSource(),
-    TemperatureRangeSanity(),
-    DurationRangeSanity(),
-]

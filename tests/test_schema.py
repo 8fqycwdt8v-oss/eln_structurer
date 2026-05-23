@@ -7,11 +7,11 @@ import json
 import pytest
 from pydantic import ValidationError
 
+from eln_structurer.prompts import reaction_draft_json_schema
 from eln_structurer.schema import (
     AmountModel,
     CompoundIdentifierModel,
     ReactionDraft,
-    reaction_draft_json_schema,
 )
 
 

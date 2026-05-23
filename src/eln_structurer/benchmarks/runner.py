@@ -80,18 +80,31 @@ async def run_adapter(adapter: Adapter, paragraph: str) -> AdapterResult:
     start = time.monotonic()
     try:
         prediction = await adapter.extract(paragraph)
+        # Harvest observability from the single _last_result field that
+        # adapters carrying loop telemetry (eln_structurer) populate.
+        # Defaults make naive_llm-style adapters work unchanged.
+        last = getattr(adapter, "_last_result", None)
+        iterations = getattr(last, "iterations", 0) if last else 0
+        critic_ran = getattr(last, "critic_ran", False) if last else False
+        revision_triggered = (
+            getattr(last, "revision_triggered", False) if last else False
+        )
+        rule_history = dict(getattr(last, "rule_history", {}) or {}) if last else None
+        usage = getattr(last, "usage", None) if last else None
+        cost_usd = getattr(usage, "total_cost_usd", 0.0) if usage else 0.0
+        api_duration_ms = getattr(usage, "duration_api_ms", 0) if usage else 0
         return AdapterResult(
             adapter_name=adapter.name,
             success=True,
             prediction=prediction,
             error=None,
             elapsed_seconds=time.monotonic() - start,
-            iterations=getattr(adapter, "_last_iterations", 0),
-            critic_ran=getattr(adapter, "_last_critic_ran", False),
-            revision_triggered=getattr(adapter, "_last_revision_triggered", False),
-            rule_history=getattr(adapter, "_last_rule_history", None),
-            cost_usd=getattr(adapter, "_last_cost_usd", 0.0),
-            api_duration_ms=getattr(adapter, "_last_api_duration_ms", 0),
+            iterations=iterations,
+            critic_ran=critic_ran,
+            revision_triggered=revision_triggered,
+            rule_history=rule_history,
+            cost_usd=cost_usd,
+            api_duration_ms=api_duration_ms,
         )
     except AdapterUnavailable as exc:
         return AdapterResult(

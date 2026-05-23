@@ -21,16 +21,9 @@ from __future__ import annotations
 
 import re
 
-from eln_structurer.rules.base import Rule, RuleViolation, Severity
+from eln_structurer.rules.base import Rule, RuleViolation, Severity, register_rule
 from eln_structurer.schema import ReactionDraft
-
-
-_WHITESPACE_RE = re.compile(r"\s+")
-
-
-def _normalise_for_search(text: str) -> str:
-    """Lower-case + collapse whitespace for substring search."""
-    return _WHITESPACE_RE.sub(" ", text.lower()).strip()
+from eln_structurer.text_utils import normalize_for_substring_search as _normalise_for_search
 
 
 # Recognised unit aliases for the unit-in-quote check. Keys are the
@@ -53,6 +46,7 @@ _UNIT_ALIASES: dict[str, set[str]] = {
 }
 
 
+@register_rule
 class NumericValueGrounded(Rule):
     """NUM-001: source_quote (when set) must appear in source_paragraph."""
 
@@ -121,6 +115,7 @@ class NumericValueGrounded(Rule):
         return violations
 
 
+@register_rule
 class UnitMatchesQuote(Rule):
     """NUM-002: the source_quote should contain the unit (or an alias).
 
@@ -189,6 +184,7 @@ def _resolve_dotted(draft: ReactionDraft, path: str) -> object | str:
     return obj
 
 
+@register_rule
 class UnspecifiedFieldsAreValid(Rule):
     """NUM-003: ``unspecified_fields`` must be well-shaped paths AND
     point at fields that are actually empty in the draft.
@@ -279,8 +275,3 @@ class UnspecifiedFieldsAreValid(Rule):
         return violations
 
 
-NUM_RULES: list[Rule] = [
-    NumericValueGrounded(),
-    UnitMatchesQuote(),
-    UnspecifiedFieldsAreValid(),
-]

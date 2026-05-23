@@ -8,7 +8,6 @@ parsers) can be compared on a common axis.
 from __future__ import annotations
 
 import json
-import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -16,16 +15,7 @@ from typing import Any
 from eln_structurer.schema import ReactionDraft
 
 
-_NORMALIZE_RE = re.compile(r"\s+")
-_DROP_CHARS = str.maketrans({c: " " for c in ".,;:()[]{}/\\'\"!?"})
-
-
-def normalize_name(text: str) -> str:
-    """Lowercase, strip punctuation and collapse whitespace."""
-    t = (text or "").lower().translate(_DROP_CHARS)
-    t = _NORMALIZE_RE.sub(" ", t).strip()
-    # Drop very short stop-words but keep chemistry tokens.
-    return t
+from eln_structurer.text_utils import normalize_compound_name as normalize_name
 
 
 def normalize_smiles(smiles: str) -> str:

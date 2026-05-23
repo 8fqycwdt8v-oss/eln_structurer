@@ -15,7 +15,7 @@ import re
 
 from eln_structurer.chemistry import name_of
 from eln_structurer.reaction_class import ReactionClass, classify_reaction
-from eln_structurer.rules.base import Rule, RuleViolation, Severity
+from eln_structurer.rules.base import Rule, RuleViolation, Severity, register_rule
 from eln_structurer.schema import ReactionDraft
 
 
@@ -36,6 +36,7 @@ def _name_matches(draft: ReactionDraft, pattern: re.Pattern) -> bool:
     return False
 
 
+@register_rule
 class SuzukiRequiredComponents(Rule):
     """CLS-001: Suzuki coupling needs Pd catalyst, base, boronic acid,
     and aryl halide. The classifier already detected Pd + boronic + halide
@@ -75,6 +76,7 @@ class SuzukiRequiredComponents(Rule):
         ]
 
 
+@register_rule
 class GrignardRequiresInertAtmosphere(Rule):
     """CLS-002: Grignard formation must run under nitrogen or argon. ORD-006
     already enforces this for any input named ``magnesium`` + halide, so
@@ -114,6 +116,7 @@ class GrignardRequiresInertAtmosphere(Rule):
         ]
 
 
+@register_rule
 class ReductionNeedsReducingAgent(Rule):
     """CLS-003: a reaction classified as REDUCTION must declare the reducing
     agent as a non-SOLVENT, non-PRODUCT input. The classifier itself uses
@@ -156,6 +159,7 @@ class ReductionNeedsReducingAgent(Rule):
         ]
 
 
+@register_rule
 class EsterificationNeedsBothPartners(Rule):
     """CLS-004: a classical Fischer-type esterification needs the acid and
     the alcohol both declared as REACTANTS."""
@@ -206,6 +210,7 @@ class EsterificationNeedsBothPartners(Rule):
         ]
 
 
+@register_rule
 class AmideCouplingHasAmineAndAcid(Rule):
     """CLS-005: amide coupling needs an amine REACTANT and a carboxylic
     acid (or activated acid) REACTANT.
@@ -265,6 +270,7 @@ class AmideCouplingHasAmineAndAcid(Rule):
         ]
 
 
+@register_rule
 class BocDeprotectionNeedsAcid(Rule):
     """CLS-006: Boc deprotection must list an acid (TFA, HCl/dioxane) as
     a REAGENT.
@@ -306,6 +312,7 @@ class BocDeprotectionNeedsAcid(Rule):
         ]
 
 
+@register_rule
 class ReductiveAminationHasCarbonylAndAmine(Rule):
     """CLS-007: reductive amination needs an amine + a carbonyl (aldehyde
     or ketone) + a hydride source."""
@@ -363,6 +370,7 @@ class ReductiveAminationHasCarbonylAndAmine(Rule):
         ]
 
 
+@register_rule
 class BuchwaldHartwigComponents(Rule):
     """CLS-008: Buchwald–Hartwig needs Pd + ligand + base + amine + aryl halide."""
 
@@ -417,6 +425,7 @@ class BuchwaldHartwigComponents(Rule):
         ]
 
 
+@register_rule
 class MitsunobuComponents(Rule):
     """CLS-009: Mitsunobu requires DIAD + PPh3 + a nucleophile and an alcohol."""
 
@@ -467,6 +476,7 @@ class MitsunobuComponents(Rule):
         ]
 
 
+@register_rule
 class WittigNeedsCarbonyl(Rule):
     """CLS-010: Wittig (or HWE / Julia) reactions need a carbonyl REACTANT.
 
@@ -512,6 +522,7 @@ class WittigNeedsCarbonyl(Rule):
         ]
 
 
+@register_rule
 class HalogenatingAgentIsNotLimiting(Rule):
     """CLS-011: in a halogenation, the substrate (not NBS/Selectfluor/etc.)
     should be the limiting reagent.
@@ -562,6 +573,7 @@ class HalogenatingAgentIsNotLimiting(Rule):
         return violations
 
 
+@register_rule
 class OxidantIsNotLimiting(Rule):
     """CLS-012: in an oxidation, the substrate (not the oxidant) is the
     limiting reagent.
@@ -613,6 +625,7 @@ class OxidantIsNotLimiting(Rule):
         return violations
 
 
+@register_rule
 class NAlkylationNeedsElectrophile(Rule):
     """CLS-013: N-alkylation needs both an amine REACTANT and an
     alkylating electrophile (alkyl halide, mesylate, tosylate, etc.).
@@ -683,18 +696,3 @@ class NAlkylationNeedsElectrophile(Rule):
         ]
 
 
-CLS_RULES: list[Rule] = [
-    SuzukiRequiredComponents(),
-    GrignardRequiresInertAtmosphere(),
-    ReductionNeedsReducingAgent(),
-    EsterificationNeedsBothPartners(),
-    AmideCouplingHasAmineAndAcid(),
-    BocDeprotectionNeedsAcid(),
-    ReductiveAminationHasCarbonylAndAmine(),
-    BuchwaldHartwigComponents(),
-    MitsunobuComponents(),
-    WittigNeedsCarbonyl(),
-    HalogenatingAgentIsNotLimiting(),
-    OxidantIsNotLimiting(),
-    NAlkylationNeedsElectrophile(),
-]

@@ -5,7 +5,7 @@ All checks here are local: RDKit only, no network calls.
 
 from __future__ import annotations
 
-from eln_structurer.rules.base import Rule, RuleViolation, Severity
+from eln_structurer.rules.base import Rule, RuleViolation, Severity, register_rule
 from eln_structurer.chemistry import (
     canonical_smiles,
     has_name_or_smiles,
@@ -16,6 +16,7 @@ from eln_structurer.chemistry import (
 from eln_structurer.schema import ReactionDraft
 
 
+@register_rule
 class SmilesParses(Rule):
     id = "STR-001"
     description = "Every SMILES identifier must parse via RDKit."
@@ -61,6 +62,7 @@ class SmilesParses(Rule):
         return violations
 
 
+@register_rule
 class NameOrSmilesPresent(Rule):
     id = "STR-002"
     description = "Every compound must have at least one NAME or SMILES identifier."
@@ -85,6 +87,7 @@ class NameOrSmilesPresent(Rule):
         return violations
 
 
+@register_rule
 class AtomBalanceSanity(Rule):
     id = "STR-003"
     description = (
@@ -164,6 +167,7 @@ def _all_compounds(draft: ReactionDraft):
             yield comp, f"workups[{wi}].components[{j}]"
 
 
+@register_rule
 class SmilesIdentifiersAreConsistent(Rule):
     """STR-004: when a compound has multiple SMILES identifiers, they must
     canonicalize to the same molecule.
@@ -218,9 +222,3 @@ class SmilesIdentifiersAreConsistent(Rule):
         return violations
 
 
-STR_RULES: list[Rule] = [
-    SmilesParses(),
-    NameOrSmilesPresent(),
-    AtomBalanceSanity(),
-    SmilesIdentifiersAreConsistent(),
-]

@@ -27,16 +27,12 @@ from eln_structurer.tools.finalize_reaction import (
 )
 
 
-# Number of consecutive failures of the same rule_id before the agent gets
-# a stronger nudge in the repair prompt.
-_DIVERGENCE_THRESHOLD = 3
+from eln_structurer.config import DEFAULT_EXTRACTOR_CONFIG as _CFG
 
-# The agent runs with max_turns = max_iters * 3 ≈ 15. validate_reaction
-# costs one turn, agent reasoning costs another, fix costs a third, so the
-# effective iteration budget is ~5. We tell the agent its remaining budget
-# via the tool result so it can self-limit instead of looping until the
-# SDK hard-caps it. ITER_BUDGET is the soft cap we communicate.
-_DEFAULT_ITER_BUDGET = 5
+# Tunables read from config.DEFAULT_EXTRACTOR_CONFIG. Kept as module-level
+# names so existing tests that patch them continue to work.
+_DIVERGENCE_THRESHOLD = _CFG.divergence_threshold
+_DEFAULT_ITER_BUDGET = _CFG.default_iter_budget
 
 
 @dataclass(frozen=True)

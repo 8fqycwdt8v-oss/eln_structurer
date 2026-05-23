@@ -80,10 +80,12 @@ def score_against_gold(
         p, r, f, n = _prf(get(predicted), get(gold))
         scores.append(FieldScore(name, p, r, f, n))
 
+    from eln_structurer.config import DEFAULT_BENCHMARK_CONFIG as _BC
+
     for name, get, tol in (
-        ("yield_percent", lambda c: c.yield_percent, 0.05),
-        ("temperature_celsius", lambda c: c.temperature_celsius, 0.05),
-        ("duration_minutes", lambda c: c.duration_minutes, 0.10),
+        ("yield_percent", lambda c: c.yield_percent, _BC.yield_tolerance),
+        ("temperature_celsius", lambda c: c.temperature_celsius, _BC.temperature_tolerance),
+        ("duration_minutes", lambda c: c.duration_minutes, _BC.duration_tolerance),
     ):
         p, r, f, n = _scalar_match(get(predicted), get(gold), tol)
         scores.append(FieldScore(name, p, r, f, n))

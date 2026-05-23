@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-from eln_structurer.rules.base import Rule, RuleViolation, Severity
+from eln_structurer.rules.base import Rule, RuleViolation, Severity, register_rule
 from eln_structurer.schema import ReactionDraft
 from eln_structurer.solvents import lookup_solvent_bp
 
@@ -62,6 +62,7 @@ def _declared_compound_names(draft: ReactionDraft) -> set[str]:
     return names
 
 
+@register_rule
 class WorkupKeywordsDeclared(Rule):
     """ORD-001: workup descriptions mentioning a known workup reagent must
     have that reagent declared as a Compound somewhere in the draft.
@@ -114,6 +115,7 @@ class WorkupKeywordsDeclared(Rule):
 _HEATING_CONTROL_TYPES = {"OIL_BATH", "WATER_BATH", "HEATER", "REFLUX"}
 
 
+@register_rule
 class SolventPresentBeforeHeating(Rule):
     id = "ORD-002"
     description = (
@@ -160,6 +162,7 @@ class SolventPresentBeforeHeating(Rule):
 _REQUIRES_STIRRING_CONTROL_TYPES = {"OIL_BATH", "WATER_BATH", "HEATER"}
 
 
+@register_rule
 class StirringBeforeHeating(Rule):
     id = "ORD-003"
     description = (
@@ -194,6 +197,7 @@ class StirringBeforeHeating(Rule):
         return []
 
 
+@register_rule
 class QuenchAfterReaction(Rule):
     id = "ORD-004"
     description = "Quench-like workups must come after the main reaction step."
@@ -274,6 +278,7 @@ def _looks_like_grignard_setup(draft: ReactionDraft) -> bool:
     return has_mg and has_halide
 
 
+@register_rule
 class InertAtmosphereForSensitiveReagents(Rule):
     """ORD-006: air- and moisture-sensitive reagents require inert atmosphere.
 
@@ -338,6 +343,7 @@ class InertAtmosphereForSensitiveReagents(Rule):
         ]
 
 
+@register_rule
 class WorkupOrderMonotonic(Rule):
     id = "ORD-005"
     description = "Workup order field should be monotonically increasing."
@@ -366,6 +372,7 @@ class WorkupOrderMonotonic(Rule):
         return violations
 
 
+@register_rule
 class RefluxTemperatureMatchesSolvent(Rule):
     """ORD-007: when ``control_type == REFLUX``, the declared setpoint should
     match the SOLVENT's atmospheric boiling point within tolerance.
@@ -432,12 +439,3 @@ class RefluxTemperatureMatchesSolvent(Rule):
         ]
 
 
-ORD_RULES: list[Rule] = [
-    WorkupKeywordsDeclared(),
-    SolventPresentBeforeHeating(),
-    StirringBeforeHeating(),
-    QuenchAfterReaction(),
-    WorkupOrderMonotonic(),
-    InertAtmosphereForSensitiveReagents(),
-    RefluxTemperatureMatchesSolvent(),
-]

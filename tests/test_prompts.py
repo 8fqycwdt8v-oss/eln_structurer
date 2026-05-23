@@ -11,7 +11,7 @@ from eln_structurer.prompts import (
     build_system_prompt,
     compressed_reaction_draft_schema,
 )
-from eln_structurer.schema import reaction_draft_json_schema
+from eln_structurer.prompts import reaction_draft_json_schema
 
 
 def test_compressed_schema_strips_noise() -> None:
