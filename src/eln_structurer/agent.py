@@ -49,11 +49,7 @@ from eln_structurer.tools import (
     validate_smiles,
     verify_quote,
 )
-from eln_structurer.tools.finalize_reaction import (
-    FinalizedReaction,
-    bind_finalized_slot,
-    unbind_finalized_slot,
-)
+from eln_structurer.tools.finalize_reaction import FinalizedReaction, finalized_slot
 
 
 DEFAULT_MODEL = "claude-sonnet-4-6"
@@ -214,13 +210,12 @@ async def extract(
 
     normalization = normalize_paragraph(paragraph)
     finalized = FinalizedReaction()
-    token = bind_finalized_slot(finalized)
     transcript: list[str] = []
     critic_report: CriticReport | None = None
     revision_triggered = False
     usage = UsageStats()
 
-    try:
+    with finalized_slot(finalized):
         user_prompt = USER_PROMPT_TEMPLATE.format(paragraph=normalization.normalized)
         await _run_agent_pass(
             user_prompt,
@@ -268,6 +263,7 @@ async def extract(
                     max_turns=max_iters * 3,
                     debug=debug,
                     transcript=transcript,
+                    usage=usage,
                 )
                 # If the revision round didn't finalize, restore the
                 # pre-critic clean state (and its rule_history) so the
@@ -278,8 +274,6 @@ async def extract(
                     finalized.validation_summary = prior_validation
                     finalized.rule_history.clear()
                     finalized.rule_history.update(prior_history)
-    finally:
-        unbind_finalized_slot(token)
 
     success = bool(finalized.pbtxt)
     return ExtractResult(

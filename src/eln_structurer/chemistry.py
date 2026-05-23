@@ -73,4 +73,9 @@ def mol_weight(smiles: str) -> float | None:
 
 def canonical_smiles(smiles: str) -> str | None:
     mol = parse_mol(smiles)
-    return None if mol is None else Chem.MolToSmiles(mol)
+    if mol is None:
+        return None
+    try:
+        return Chem.MolToSmiles(mol)
+    except Exception:  # noqa: BLE001 — defensive, same rationale as parse_mol
+        return None

@@ -70,6 +70,7 @@ class AmountModel(BaseModel):
     units: AmountUnit = Field(..., description="One of the allowed unit strings")
     source_quote: str | None = Field(
         default=None,
+        max_length=512,
         description=(
             "Exact substring from the source paragraph the value was lifted "
             "from (e.g. '1.38 g, 10.0 mmol'). When set, NUM-001 verifies it "
@@ -170,6 +171,7 @@ class ProductMeasurementModel(BaseModel):
     is_normalized: bool = False
     source_quote: str | None = Field(
         default=None,
+        max_length=512,
         description=(
             "Exact substring from the source paragraph the measurement was "
             "lifted from (e.g. '92%' or '181 mg'). Verified by NUM-001."
@@ -209,6 +211,7 @@ class ReactionDraft(BaseModel):
     )
     unspecified_fields: list[str] = Field(
         default_factory=list,
+        max_length=64,
         description=(
             "JSONPath-like strings naming fields the paragraph did NOT "
             "specify. Use this instead of silently omitting fields. "
@@ -222,4 +225,18 @@ class ReactionDraft(BaseModel):
     def _at_least_one_input(self) -> "ReactionDraft":
         if not self.inputs:
             raise ValueError("ReactionDraft.inputs must contain at least one input")
+        return self
+
+    @model_validator(mode="after")
+    def _unspecified_fields_unique(self) -> "ReactionDraft":
+        # Duplicates in unspecified_fields don't change semantics but DO
+        # inflate the draft and signal LLM confusion. Reject them at the
+        # schema layer so they never reach the rule pack.
+        seen: set[str] = set()
+        for path in self.unspecified_fields:
+            if path in seen:
+                raise ValueError(
+                    f"unspecified_fields contains duplicate entry: {path!r}"
+                )
+            seen.add(path)
         return self

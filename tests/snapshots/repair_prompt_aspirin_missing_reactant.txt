@@ -1,0 +1,5 @@
+VALIDATION FAILED — 1 error(s), 6 warning(s).
+[ERROR CMP-001] at inputs[*].components[*].reaction_role: No input component is flagged with reaction_role=REACTANT.
+  Fix: At least one compound must have reaction_role='REACTANT'. Identify the main starting material from the paragraph and mark it accordingly.
+
+Now produce a corrected draft and call validate_reaction again.

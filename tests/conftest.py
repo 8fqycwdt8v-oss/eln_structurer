@@ -28,6 +28,30 @@ def rule_ids(violations: Iterable[RuleViolation]) -> set[str]:
     return {v.rule_id for v in violations}
 
 
+@pytest.fixture(autouse=True)
+def _clear_module_caches():
+    """Clear lru_caches between tests so global state never leaks.
+
+    The codebase memoises three hot paths: chemistry.parse_mol (SMILES →
+    Mol), prompts.build_system_prompt, and
+    prompts.schema.compressed_reaction_draft_schema. Without this fixture,
+    a test that mutates module-level state (e.g. patches the schema)
+    would taint every subsequent test that consults the cache.
+    """
+    from eln_structurer.chemistry import parse_mol
+    from eln_structurer.prompts import build_system_prompt
+    from eln_structurer.prompts.schema import (
+        compressed_reaction_draft_schema,
+        reaction_draft_json_schema,
+    )
+
+    parse_mol.cache_clear()
+    build_system_prompt.cache_clear()
+    compressed_reaction_draft_schema.cache_clear()
+    reaction_draft_json_schema.cache_clear()
+    yield
+
+
 def _build_aspirin_draft() -> ReactionDraft:
     """A minimal, validation-clean draft for the aspirin synthesis."""
     salicylic_acid = CompoundModel(

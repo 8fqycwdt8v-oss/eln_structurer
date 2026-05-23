@@ -66,6 +66,24 @@ def get_finalized() -> FinalizedReaction | None:
     return _CURRENT_FINALIZED.get()
 
 
+import contextlib  # noqa: E402 — kept local to the helper
+
+
+@contextlib.contextmanager
+def finalized_slot(slot: FinalizedReaction):
+    """Context manager wrapper around bind/unbind that can't be skipped.
+
+    Use this in agent.extract() instead of the raw bind/unbind pair so a
+    raised exception inside the loop is guaranteed to reset the
+    ContextVar even if the programmer forgets a try/finally.
+    """
+    token = bind_finalized_slot(slot)
+    try:
+        yield slot
+    finally:
+        unbind_finalized_slot(token)
+
+
 def draft_signature(draft: ReactionDraft) -> str:
     """Stable hash for change detection — independent of dict ordering."""
     canonical = json.dumps(draft.model_dump(mode="json"), sort_keys=True)

@@ -138,6 +138,15 @@ async def run_benchmark(
     adapter_names: list[str],
 ) -> list[CaseRun]:
     """Run every (case, adapter) pair sequentially and return CaseRun records."""
+    from eln_structurer.config import DEFAULT_BENCHMARK_CONFIG as _BC
+
+    expected = len(cases) * len(adapter_names)
+    if expected > _BC.max_runs_accumulator:
+        raise RuntimeError(
+            f"Refusing to run {expected} (case × adapter) pairs — exceeds "
+            f"max_runs_accumulator={_BC.max_runs_accumulator}. Split the "
+            "fixtures or stream results to disk."
+        )
     runs: list[CaseRun] = []
     for case in cases:
         for adapter_name in adapter_names:

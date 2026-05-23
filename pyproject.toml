@@ -7,13 +7,16 @@ readme = "README.md"
 license = { file = "LICENSE" }
 authors = [{ name = "eln_structurer contributors" }]
 dependencies = [
-    "claude-agent-sdk>=0.1.0",
-    "ord-schema>=0.3.0",
-    "rdkit>=2024.3.1",
-    "pydantic>=2.7",
-    "click>=8.1",
-    "anyio>=4.3",
-    "rich>=13.7",
+    # Capped to the next major to avoid silent breakage on a SDK 1.x bump.
+    "claude-agent-sdk>=0.2,<1",
+    # ord-schema enums change between minor versions; cap to current minor.
+    "ord-schema>=0.3,<0.4",
+    # RDKit's release cadence is annual; allow patch/minor within the year.
+    "rdkit>=2024.3.1,<2027",
+    "pydantic>=2.7,<3",
+    "click>=8.1,<9",
+    "anyio>=4.3,<5",
+    "rich>=13.7,<16",
 ]
 
 [project.optional-dependencies]

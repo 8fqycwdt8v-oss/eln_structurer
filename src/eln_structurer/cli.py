@@ -49,9 +49,16 @@ def _format_failure_summary(summary: dict) -> str:
 def _read_input(source: str) -> str:
     if source == "-":
         return sys.stdin.read()
-    path = Path(source)
-    if not path.exists():
-        raise click.ClickException(f"File not found: {source}")
+    # Resolve symlinks etc. via strict=True. The bench/extract CLIs are
+    # local tools, so we don't restrict to the cwd — but resolving is
+    # enough to fail loudly on broken symlinks instead of opening
+    # whatever they pointed at.
+    try:
+        path = Path(source).resolve(strict=True)
+    except (OSError, RuntimeError) as exc:
+        raise click.ClickException(f"File not found: {source}") from exc
+    if not path.is_file():
+        raise click.ClickException(f"Not a regular file: {source}")
     return path.read_text(encoding="utf-8")
 
 
