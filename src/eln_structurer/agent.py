@@ -50,21 +50,21 @@ from eln_structurer.tools import (
     verify_quote,
 )
 from eln_structurer.tools.finalize_reaction import FinalizedReaction, finalized_slot
+from eln_structurer.config import DEFAULT_EXTRACTOR_CONFIG as _CFG
 
 
 DEFAULT_MODEL = "claude-sonnet-4-6"
 HIGH_QUALITY_MODEL = "claude-opus-4-7"
 
 # Backwards-compatible alias — ``config.DEFAULT_EXTRACTOR_CONFIG`` is the
-# canonical source. Kept so existing imports keep working.
-from eln_structurer.config import DEFAULT_EXTRACTOR_CONFIG as _CFG  # noqa: E402
+# canonical source. Kept so existing tests can patch the symbol directly.
 MAX_PARAGRAPH_CHARS = _CFG.max_paragraph_chars
 
 
 @dataclass
 class UsageStats:
-    """LLM usage and cost. Aggregated across the primary loop AND any
-    critic / revision rounds in this extraction."""
+    """LLM usage and cost. Aggregated across the primary agent pass AND
+    any critic / revision rounds in this extraction."""
     total_cost_usd: float = 0.0
     duration_ms: int = 0
     duration_api_ms: int = 0

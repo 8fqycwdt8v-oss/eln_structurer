@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from eln_structurer.benchmarks.canonical import CanonicalReaction
+from eln_structurer.config import DEFAULT_BENCHMARK_CONFIG as _BC
 
 
 @dataclass
@@ -79,8 +80,6 @@ def score_against_gold(
     ):
         p, r, f, n = _prf(get(predicted), get(gold))
         scores.append(FieldScore(name, p, r, f, n))
-
-    from eln_structurer.config import DEFAULT_BENCHMARK_CONFIG as _BC
 
     for name, get, tol in (
         ("yield_percent", lambda c: c.yield_percent, _BC.yield_tolerance),

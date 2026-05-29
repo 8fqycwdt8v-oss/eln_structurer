@@ -17,6 +17,7 @@ The slot also carries cross-tool state that other validators consult:
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 from collections import Counter
@@ -64,9 +65,6 @@ def unbind_finalized_slot(token) -> None:
 
 def get_finalized() -> FinalizedReaction | None:
     return _CURRENT_FINALIZED.get()
-
-
-import contextlib  # noqa: E402 — kept local to the helper
 
 
 @contextlib.contextmanager

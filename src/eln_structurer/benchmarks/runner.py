@@ -16,6 +16,7 @@ from eln_structurer.benchmarks.adapters.base import (
 )
 from eln_structurer.benchmarks.canonical import CanonicalReaction, load_gold
 from eln_structurer.benchmarks.scoring import FieldScore, macro_f1, score_against_gold
+from eln_structurer.config import DEFAULT_BENCHMARK_CONFIG as _BC
 
 log = logging.getLogger(__name__)
 
@@ -138,8 +139,6 @@ async def run_benchmark(
     adapter_names: list[str],
 ) -> list[CaseRun]:
     """Run every (case, adapter) pair sequentially and return CaseRun records."""
-    from eln_structurer.config import DEFAULT_BENCHMARK_CONFIG as _BC
-
     expected = len(cases) * len(adapter_names)
     if expected > _BC.max_runs_accumulator:
         raise RuntimeError(

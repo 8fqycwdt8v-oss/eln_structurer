@@ -8,10 +8,10 @@ followed by a critic response.
 Usage:
 
     from tests._sdk_stub import stub_sdk
-    with stub_sdk(primary_tool_calls=[{"tool": "finalize_reaction", "args": {...}}],
-                  critic_findings=[]) as ctx:
+    with stub_sdk(primary_text="(stubbed assistant response)",
+                  critic_text='{"findings": []}') as log:
         result = await extract("paragraph")
-        assert ctx.calls == ["primary", "critic"]
+        assert log.primary_calls == 1
 """
 
 from __future__ import annotations

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from eln_structurer.rules.numeric_grounding import UnspecifiedFieldsAreValid  # noqa: F401
 from eln_structurer.rules.ordering import WorkupKeywordsDeclared
 from eln_structurer.rules.stoichiometry import (
     AmountHasUnits,
