@@ -55,12 +55,27 @@ from eln_structurer.predict.risks import (
     recency_summary,
     safety_screen,
 )
+from eln_structurer.predict.greenness import (
+    protocol_solvent_score,
+    solvent_score,
+)
+from eln_structurer.predict.ranker import (
+    RankedProposal,
+    Weights,
+    rank_proposals,
+)
 from eln_structurer.predict.skeleton import (
     ProtocolSkeleton,
     Slot,
     all_skeletons,
     get_skeleton,
     known_classes,
+)
+from eln_structurer.predict.yield_model import (
+    MIN_TRAINING_POINTS,
+    YieldEstimate,
+    conservative_yield_score,
+    estimate_yield,
 )
 
 __all__ = [
@@ -103,4 +118,14 @@ __all__ = [
     "known_classes",
     "ProposalResult",
     "compose_protocol",
+    # Tier-3 ranking
+    "solvent_score",
+    "protocol_solvent_score",
+    "MIN_TRAINING_POINTS",
+    "YieldEstimate",
+    "estimate_yield",
+    "conservative_yield_score",
+    "Weights",
+    "RankedProposal",
+    "rank_proposals",
 ]
