@@ -123,6 +123,14 @@ def stub_sdk(
     agent_mod.ClaudeSDKClient = _StubClient  # type: ignore[misc]
     import eln_structurer.critic.runner as critic_runner
     critic_runner.query = _stub_query  # type: ignore[misc]
+    # Predict-side agent (Tier 6) imports the same names locally; patch
+    # its module attributes too so the stub catches every call site.
+    try:
+        import eln_structurer.predict.agent as predict_agent_mod
+    except ImportError:
+        predict_agent_mod = None  # type: ignore[assignment]
+    if predict_agent_mod is not None:
+        predict_agent_mod.ClaudeSDKClient = _StubClient  # type: ignore[misc]
     try:
         yield log
     finally:
@@ -130,3 +138,5 @@ def stub_sdk(
         sdk.query = original_query  # type: ignore[misc]
         agent_mod.ClaudeSDKClient = original_client  # type: ignore[misc]
         critic_runner.query = original_query  # type: ignore[misc]
+        if predict_agent_mod is not None:
+            predict_agent_mod.ClaudeSDKClient = original_client  # type: ignore[misc]

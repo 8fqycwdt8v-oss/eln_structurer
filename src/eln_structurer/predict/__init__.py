@@ -69,6 +69,13 @@ from eln_structurer.predict.insilico import (
     local_descriptors,
     register_backend,
 )
+from eln_structurer.predict.agent import (
+    AgenticPredictorOutput,
+    AgenticVerdict,
+    agent_available,
+    agentic_propose_protocol,
+    apply_verdict,
+)
 from eln_structurer.predict.proposer import (
     PredictorOutput,
     propose_protocol,
@@ -152,4 +159,10 @@ __all__ = [
     # Tier-5 top-level entry
     "PredictorOutput",
     "propose_protocol",
+    # Tier-6 agentic loop
+    "AgenticPredictorOutput",
+    "AgenticVerdict",
+    "agent_available",
+    "agentic_propose_protocol",
+    "apply_verdict",
 ]

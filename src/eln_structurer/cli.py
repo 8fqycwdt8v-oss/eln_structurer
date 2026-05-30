@@ -284,8 +284,14 @@ def bench_compare_cmd(baseline: Path, current: Path, out_path: Path | None) -> N
               type=click.Path(dir_okay=False, writable=True, path_type=Path),
               default=None,
               help="Optional path to dump the full PredictorOutput as JSON.")
+@click.option("--agentic", is_flag=True,
+              help="Wrap the deterministic predictor in an LLM-agentic "
+                   "critique loop (Tier 6). Requires ANTHROPIC_API_KEY.")
+@click.option("--agent-model", default=None,
+              help="Model for the agentic loop. Default: claude-sonnet-4-6.")
 def predict_cmd(reaction_smiles: str, constraints_path: Path | None,
-                top_k: int, json_out: Path | None) -> None:
+                top_k: int, json_out: Path | None,
+                agentic: bool, agent_model: str | None) -> None:
     """Propose ranked protocols for a target reaction SMILES."""
     import json
 
@@ -306,7 +312,32 @@ def predict_cmd(reaction_smiles: str, constraints_path: Path | None,
                 ) from exc
             constraints = yaml.safe_load(text)
 
-    result = propose_protocol(reaction_smiles, constraints=constraints)
+    if agentic:
+        from eln_structurer.predict.agent import (
+            DEFAULT_AGENT_MODEL,
+            agentic_propose_protocol,
+        )
+
+        agent_result = asyncio.run(
+            agentic_propose_protocol(
+                reaction_smiles,
+                constraints=constraints,
+                model=agent_model or DEFAULT_AGENT_MODEL,
+                top_k=top_k,
+            )
+        )
+        result = agent_result.baseline
+        # Splice the agentic ranked list back over the baseline so the
+        # rendering loop below shows the agent's reordering / patches.
+        result = type(result)(
+            target_reaction_smiles=result.target_reaction_smiles,
+            classification=result.classification,
+            ranked_proposals=agent_result.ranked_proposals,
+            warnings=list(agent_result.warnings),
+            safety_blocked_proposals=result.safety_blocked_proposals,
+        )
+    else:
+        result = propose_protocol(reaction_smiles, constraints=constraints)
 
     console.print(
         f"[cyan]Target:[/cyan] {reaction_smiles}",
