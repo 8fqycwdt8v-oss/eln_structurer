@@ -55,9 +55,19 @@ from eln_structurer.predict.risks import (
     recency_summary,
     safety_screen,
 )
+from eln_structurer.predict.dft_lookup import (
+    known_substrate_tags,
+    lookup_activation_energy,
+)
 from eln_structurer.predict.greenness import (
     protocol_solvent_score,
     solvent_score,
+)
+from eln_structurer.predict.insilico import (
+    DescriptorProfile,
+    backend_available,
+    local_descriptors,
+    register_backend,
 )
 from eln_structurer.predict.ranker import (
     RankedProposal,
@@ -128,4 +138,11 @@ __all__ = [
     "Weights",
     "RankedProposal",
     "rank_proposals",
+    # Tier-4 in-silico priors
+    "DescriptorProfile",
+    "local_descriptors",
+    "backend_available",
+    "register_backend",
+    "lookup_activation_energy",
+    "known_substrate_tags",
 ]
