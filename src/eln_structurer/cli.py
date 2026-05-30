@@ -268,5 +268,129 @@ def bench_compare_cmd(baseline: Path, current: Path, out_path: Path | None) -> N
         click.echo(report)
 
 
+@main.command("predict")
+@click.argument("reaction_smiles", type=str)
+@click.option(
+    "--constraints",
+    "constraints_path",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    default=None,
+    help="YAML/JSON file with user constraints (no_halogenated_solvents, "
+         "max_temperature_c, max_duration_minutes, allowed_sources, min_year).",
+)
+@click.option("--top-k", type=int, default=3, show_default=True,
+              help="How many ranked candidates to print.")
+@click.option("--json-out", "json_out",
+              type=click.Path(dir_okay=False, writable=True, path_type=Path),
+              default=None,
+              help="Optional path to dump the full PredictorOutput as JSON.")
+def predict_cmd(reaction_smiles: str, constraints_path: Path | None,
+                top_k: int, json_out: Path | None) -> None:
+    """Propose ranked protocols for a target reaction SMILES."""
+    import json
+
+    from eln_structurer.predict import propose_protocol
+
+    constraints: dict | None = None
+    if constraints_path is not None:
+        text = constraints_path.read_text(encoding="utf-8")
+        try:
+            constraints = json.loads(text)
+        except json.JSONDecodeError:
+            try:
+                import yaml  # type: ignore[import-untyped]
+            except ImportError as exc:
+                raise click.ClickException(
+                    "constraints file is not valid JSON and PyYAML is not "
+                    "installed; install pyyaml or convert the file to JSON."
+                ) from exc
+            constraints = yaml.safe_load(text)
+
+    result = propose_protocol(reaction_smiles, constraints=constraints)
+
+    console.print(
+        f"[cyan]Target:[/cyan] {reaction_smiles}",
+        highlight=False,
+    )
+    if result.classification is not None:
+        console.print(
+            f"[cyan]Class:[/cyan] {result.classification.cls.value} "
+            f"(confidence {result.classification.confidence:.2f})",
+            highlight=False,
+        )
+    if result.warnings:
+        for w in result.warnings:
+            console.print(f"[yellow]! {w}[/yellow]", highlight=False)
+
+    if not result.ranked_proposals:
+        console.print("[red]No candidate protocols available.[/red]")
+        sys.exit(2)
+
+    for i, ranked in enumerate(result.ranked_proposals[:top_k], start=1):
+        console.print(
+            f"\n[bold]#{i}[/bold] "
+            f"class={ranked.proposal.skeleton_class} "
+            f"score={ranked.overall_score:.3f} "
+            f"confidence={ranked.proposal.overall_confidence.value}",
+            highlight=False,
+        )
+        console.print(
+            f"  yield_score={ranked.yield_score:.2f} "
+            f"greenness={ranked.greenness_score:.2f} "
+            f"retrieval={ranked.retrieval_score:.2f}",
+            highlight=False,
+        )
+        if ranked.yield_estimate is not None:
+            est = ranked.yield_estimate
+            console.print(
+                f"  yield estimate: {est.point:.0f}% "
+                f"[lower95={est.lower_95:.0f}, upper95={est.upper_95:.0f}, "
+                f"n_support={est.n_support}]",
+                highlight=False,
+            )
+        if ranked.constraint_violations:
+            console.print(
+                f"  [yellow]constraint violations:[/yellow] "
+                f"{'; '.join(ranked.constraint_violations)}",
+                highlight=False,
+            )
+        if ranked.proposal.warnings:
+            console.print(
+                f"  warnings: {'; '.join(ranked.proposal.warnings)}",
+                highlight=False,
+            )
+
+    if json_out is not None:
+        payload = {
+            "target": result.target_reaction_smiles,
+            "classification": (
+                {"cls": result.classification.cls.value,
+                 "confidence": result.classification.confidence,
+                 "rationale": result.classification.rationale}
+                if result.classification else None
+            ),
+            "warnings": result.warnings,
+            "ranked": [
+                {
+                    "rank": i + 1,
+                    "class": r.proposal.skeleton_class,
+                    "overall_score": r.overall_score,
+                    "yield_score": r.yield_score,
+                    "greenness_score": r.greenness_score,
+                    "confidence_score": r.confidence_score,
+                    "retrieval_score": r.retrieval_score,
+                    "constraint_penalty": r.constraint_penalty,
+                    "constraint_violations": r.constraint_violations,
+                    "overall_confidence": r.proposal.overall_confidence.value,
+                    "warnings": r.proposal.warnings,
+                    "draft": r.proposal.draft.model_dump(mode="json"),
+                }
+                for i, r in enumerate(result.ranked_proposals[:top_k])
+            ],
+        }
+        json_out.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        console.print(f"[green]Wrote JSON to {json_out}[/green]")
+
+
 if __name__ == "__main__":  # pragma: no cover
     main()

@@ -69,6 +69,10 @@ from eln_structurer.predict.insilico import (
     local_descriptors,
     register_backend,
 )
+from eln_structurer.predict.proposer import (
+    PredictorOutput,
+    propose_protocol,
+)
 from eln_structurer.predict.ranker import (
     RankedProposal,
     Weights,
@@ -145,4 +149,7 @@ __all__ = [
     "register_backend",
     "lookup_activation_energy",
     "known_substrate_tags",
+    # Tier-5 top-level entry
+    "PredictorOutput",
+    "propose_protocol",
 ]
