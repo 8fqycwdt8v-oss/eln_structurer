@@ -18,6 +18,10 @@ Public surface:
 
 from __future__ import annotations
 
+from eln_structurer.predict.composition import (
+    ProposalResult,
+    compose_protocol,
+)
 from eln_structurer.predict.confidence import (
     ChannelReport,
     ConfidenceLevel,
@@ -32,6 +36,7 @@ from eln_structurer.predict.corpus import (
     ReactionRecord,
 )
 from eln_structurer.predict.fingerprint import reaction_fingerprint, tanimoto
+from eln_structurer.predict.hte_corpus import default_seed_corpus
 from eln_structurer.predict.retrieval import (
     Hit,
     RecordFilter,
@@ -50,12 +55,20 @@ from eln_structurer.predict.risks import (
     recency_summary,
     safety_screen,
 )
+from eln_structurer.predict.skeleton import (
+    ProtocolSkeleton,
+    Slot,
+    all_skeletons,
+    get_skeleton,
+    known_classes,
+)
 
 __all__ = [
     # corpus
     "CorpusSource",
     "LocalCorpus",
     "ReactionRecord",
+    "default_seed_corpus",
     # fingerprint
     "reaction_fingerprint",
     "tanimoto",
@@ -82,4 +95,12 @@ __all__ = [
     "hard_constraint_filter",
     "recency_summary",
     "safety_screen",
+    # skeletons + composition
+    "Slot",
+    "ProtocolSkeleton",
+    "all_skeletons",
+    "get_skeleton",
+    "known_classes",
+    "ProposalResult",
+    "compose_protocol",
 ]
